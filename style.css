@@ -293,6 +293,26 @@ body {
 
 .poly-verifier { font-size: 10px; color: var(--text-faint); margin-top: 1px; }
 
+.export-divider {
+  height: 1px; background: var(--divider); margin: 4px 0;
+}
+.btn-export-all {
+  background: #1a5276; color: #fff; padding: 9px 16px;
+  border: none; border-radius: var(--radius); font: inherit;
+  font-size: 13px; font-weight: 600; cursor: pointer; text-align: center;
+  transition: background .15s;
+}
+.btn-export-all:hover { background: #154360; }
+.btn-export-all:disabled { opacity: .5; cursor: wait; }
+.btn-export-all-geo {
+  background: none; border: 1px solid #1a5276; color: #1a5276;
+  padding: 9px 16px; border-radius: var(--radius); font: inherit;
+  font-size: 13px; font-weight: 600; cursor: pointer; text-align: center;
+  transition: all .15s;
+}
+.btn-export-all-geo:hover { background: #eaf2f8; }
+.btn-export-all-geo:disabled { opacity: .5; cursor: wait; }
+
 /* --- Drawn Polygons --- */
 :root {
   --blue: #2980b9;

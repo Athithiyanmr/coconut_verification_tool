@@ -906,6 +906,143 @@ function downloadFile(content, filename, type) {
   URL.revokeObjectURL(url);
 }
 
+// ---- Export ALL Districts (Combined) ----
+$('#exportAllBtn').addEventListener('click', () => exportAllDistricts('csv'));
+$('#exportAllGeoBtn').addEventListener('click', () => exportAllDistricts('geojson'));
+
+async function exportAllDistricts(format) {
+  const btn = format === 'csv' ? $('#exportAllBtn') : $('#exportAllGeoBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Loading all districts...';
+
+  try {
+    // 1. Fetch latest verifications from Google Sheet
+    await loadFromCloud();
+
+    // 2. Load all district GeoJSONs
+    const districtNames = Object.keys(districtIndex).sort();
+    const allFeatures = [];
+    let csvRows = [];
+    let totalPolygons = 0;
+    let verified = 0;
+    let yesCount = 0;
+    let noCount = 0;
+
+    for (let i = 0; i < districtNames.length; i++) {
+      const dName = districtNames[i];
+      const info = districtIndex[dName];
+      btn.textContent = `Loading ${dName}... (${i + 1}/${districtNames.length})`;
+
+      const res = await fetch(info.file);
+      const gj = await res.json();
+
+      gj.features.forEach(f => {
+        const id = f.properties.id;
+        const key = `${dName}:${id}`;
+        const status = getStatus(key) || 'pending';
+        const verifier = getVerifier(key);
+        const entry = verificationResults[key];
+        const ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
+        const centroid = getCentroid(f.geometry);
+
+        totalPolygons++;
+        if (status === 'yes' || status === 'no') verified++;
+        if (status === 'yes') yesCount++;
+        if (status === 'no') noCount++;
+
+        if (format === 'csv') {
+          csvRows.push(
+            `"${dName}",${id},${f.properties.area_ha},` +
+            `${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},` +
+            `${status},"${verifier}","${ts}",training_label`
+          );
+        } else {
+          const feat = JSON.parse(JSON.stringify(f));
+          feat.properties.district = dName;
+          feat.properties.verification = status;
+          feat.properties.verified_by = verifier;
+          feat.properties.verification_timestamp = ts;
+          feat.properties.source = 'training_label';
+          allFeatures.push(feat);
+        }
+      });
+    }
+
+    // 3. Add drawn polygons
+    drawnPolygons.forEach(p => {
+      const centroid = getCentroid(p.geometry);
+      if (format === 'csv') {
+        csvRows.push(
+          `"${p.district}",${p.id},${p.area_ha},` +
+          `${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},` +
+          `user_drawn,"${p.user}","${p.timestamp}",user_drawn`
+        );
+      } else {
+        allFeatures.push({
+          type: 'Feature',
+          geometry: p.geometry,
+          properties: {
+            district: p.district,
+            id: p.id,
+            area_ha: p.area_ha,
+            verification: 'user_drawn',
+            verified_by: p.user,
+            verification_timestamp: p.timestamp,
+            note: p.note,
+            source: 'user_drawn',
+          },
+        });
+      }
+    });
+
+    // 4. Generate file
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'csv') {
+      const header = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source';
+      const summary = [
+        `# Coconut Verification Export - Tamil Nadu 2020`,
+        `# Date: ${new Date().toISOString()}`,
+        `# Total Polygons: ${totalPolygons}`,
+        `# Verified: ${verified} (${(verified/totalPolygons*100).toFixed(1)}%)`,
+        `# Coconut (Yes): ${yesCount}`,
+        `# Not Coconut (No): ${noCount}`,
+        `# Pending: ${totalPolygons - verified}`,
+        `# Drawn Polygons: ${drawnPolygons.length}`,
+        `#`,
+      ].join('\n');
+      const csv = summary + '\n' + header + '\n' + csvRows.join('\n') + '\n';
+      downloadFile(csv, `coconut_verification_all_districts_${timestamp}.csv`, 'text/csv');
+    } else {
+      const combined = {
+        type: 'FeatureCollection',
+        properties: {
+          name: 'Coconut Verification - Tamil Nadu 2020',
+          exportDate: new Date().toISOString(),
+          totalPolygons,
+          verified,
+          coconut: yesCount,
+          notCoconut: noCount,
+          pending: totalPolygons - verified,
+          drawnPolygons: drawnPolygons.length,
+        },
+        features: allFeatures,
+      };
+      const json = JSON.stringify(combined);
+      downloadFile(json, `coconut_verification_all_districts_${timestamp}.geojson`, 'application/json');
+    }
+
+    btn.textContent = `Done! ${totalPolygons} polygons exported`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+
+  } catch (e) {
+    console.error('Export all failed:', e);
+    btn.textContent = 'Export failed - try again';
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+  }
+}
+
 // ---- Keyboard Shortcuts ----
 document.addEventListener('keydown', (e) => {
   // Don't capture when user name modal is open
