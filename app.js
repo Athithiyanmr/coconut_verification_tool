@@ -5,7 +5,7 @@
 
 // ---- Cloud Config ----
 // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
-const GSHEET_API = 'PASTE_YOUR_APPS_SCRIPT_URL_HERE';
+const GSHEET_API = 'https://script.google.com/macros/s/AKfycbw2Qgfv7U-gG39a4Z1uvrf_5ZFQnZnj6QMmgj4zmSNTsXobCHKpzRi_ClQBl_vJ0ZZV/exec';
 
 // ---- State ----
 let districtIndex = {};
