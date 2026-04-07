@@ -240,6 +240,59 @@ body {
 /* Leaflet tooltip overrides */
 .leaflet-tooltip { font-family: var(--font); font-size: 12px; }
 
+/* --- User Modal --- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(43,43,30,.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-overlay.hidden { display: none; }
+.modal-card {
+  background: var(--surface); border-radius: 12px;
+  padding: 32px 28px; width: 380px; max-width: 90vw;
+  box-shadow: 0 12px 40px rgba(0,0,0,.18); text-align: center;
+}
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.modal-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+.modal-input {
+  width: 100%; padding: 10px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius); font: inherit; font-size: 15px;
+  color: var(--text); background: var(--surface-2); margin-bottom: 14px;
+  text-align: center;
+}
+.modal-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.modal-btn { width: 100%; padding: 12px; font-size: 15px; }
+
+/* --- Sync Indicator --- */
+.user-sync-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px; font-size: 12px; color: var(--text-muted);
+}
+.current-user { font-size: 12px; }
+.sync-indicator { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pending); display: inline-block;
+}
+.sync-dot.sync-ok { background: var(--yes); }
+.sync-dot.sync-loading { background: var(--warning); animation: pulse .8s infinite; }
+.sync-dot.sync-saving { background: var(--warning); animation: pulse .5s infinite; }
+.sync-dot.sync-error { background: var(--no); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+.field-row { display: flex; justify-content: space-between; align-items: center; }
+.refresh-btn { padding: 4px 10px !important; font-size: 11px !important; }
+
+.verified-by {
+  font-size: 12px; color: var(--primary); font-weight: 500;
+  margin-bottom: 8px; padding: 4px 8px;
+  background: var(--primary-light); border-radius: 4px;
+  display: inline-block;
+}
+.verified-by.hidden { display: none; }
+
+.poly-verifier { font-size: 10px; color: var(--text-faint); margin-top: 1px; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .sidebar { width: 100%; min-width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--divider); }

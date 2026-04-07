@@ -11,6 +11,16 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- User Name Modal -->
+  <div class="modal-overlay" id="userModal">
+    <div class="modal-card">
+      <h2 class="modal-title">Welcome to Coconut Verifier</h2>
+      <p class="modal-desc">Enter your name so others know who verified each polygon.</p>
+      <input type="text" id="userName" class="modal-input" placeholder="Your name (e.g., Athithiyan)" autocomplete="off" />
+      <button class="btn btn-primary modal-btn" id="userNameSubmit">Start Verifying</button>
+    </div>
+  </div>
+
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -23,14 +33,24 @@
         </svg>
         <div>
           <h1 class="logo-title">Coconut Verifier</h1>
-          <p class="logo-sub">Tamil Nadu 2020</p>
+          <p class="logo-sub">Tamil Nadu 2020 — Shared</p>
+        </div>
+      </div>
+      <div class="user-sync-row">
+        <span class="current-user">User: <b id="currentUserDisplay">—</b></span>
+        <div class="sync-indicator" id="syncIndicator">
+          <span class="sync-dot"></span>
+          <span class="sync-text">Connecting...</span>
         </div>
       </div>
     </div>
 
     <!-- District Selector -->
     <div class="sidebar-section">
-      <label class="field-label" for="districtSelect">Select District</label>
+      <div class="field-row">
+        <label class="field-label" for="districtSelect">Select District</label>
+        <button class="btn btn-sm refresh-btn" id="refreshBtn" title="Refresh from cloud">Refresh</button>
+      </div>
       <select id="districtSelect" class="select-input">
         <option value="">— Choose a district —</option>
       </select>
@@ -84,6 +104,7 @@
         <button class="close-btn" id="closeVerify">&times;</button>
       </div>
       <p class="verify-hint">Toggle the overlay to see the satellite image beneath. Is this a coconut area?</p>
+      <p class="verified-by hidden" id="verifiedBy"></p>
       <div class="verify-toggle-row">
         <label class="toggle-label">
           <input type="checkbox" id="overlayToggle" checked />
