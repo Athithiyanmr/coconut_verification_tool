@@ -1,11 +1,13 @@
 /* ==========================================================
    Coconut Polygon Verifier — Tamil Nadu 2020
-   Shared cloud backend via jsonblob.com
+   Shared backend with Express API
    ========================================================== */
 
 // ---- Cloud Config ----
-const BLOB_ID = '019d67ae-51f5-70be-9c9a-3618e19f6e8b';
-const BLOB_URL = `https://jsonblob.com/api/jsonBlob/${BLOB_ID}`;
+// __PORT_5000__ is replaced by deploy_website with the actual proxy URL
+const API_BASE = (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1')
+  ? '' : '/__PORT_5000__';
+const API_URL = `${API_BASE}/api/data`;
 
 // ---- State ----
 let districtIndex = {};
@@ -83,7 +85,7 @@ const loadingOverlay = $('#loadingOverlay');
 async function loadFromCloud() {
   try {
     setSyncStatus('loading');
-    const res = await fetch(BLOB_URL, { cache: 'no-store' });
+    const res = await fetch(API_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to load');
     const data = await res.json();
     if (data.verifications) {
@@ -118,7 +120,7 @@ async function saveToCloud() {
     // Read current state first to merge (in case others saved while we worked)
     let cloudData = { verifications: {} };
     try {
-      const readRes = await fetch(BLOB_URL, { cache: 'no-store' });
+      const readRes = await fetch(API_URL, { cache: 'no-store' });
       if (readRes.ok) cloudData = await readRes.json();
     } catch (e) { /* use empty if read fails */ }
 
@@ -143,7 +145,7 @@ async function saveToCloud() {
       drawnPolygons: mergedDrawn,
     };
 
-    const res = await fetch(BLOB_URL, {
+    const res = await fetch(API_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
