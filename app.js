@@ -1,13 +1,11 @@
 /* ==========================================================
    Coconut Polygon Verifier — Tamil Nadu 2020
-   Shared backend with Express API
+   Shared backend via Google Sheets (Apps Script Web App)
    ========================================================== */
 
 // ---- Cloud Config ----
-// __PORT_5000__ is replaced by deploy_website with the actual proxy URL
-const API_BASE = (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1')
-  ? '' : '/__PORT_5000__';
-const API_URL = `${API_BASE}/api/data`;
+// PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+const GSHEET_API = 'PASTE_YOUR_APPS_SCRIPT_URL_HERE';
 
 // ---- State ----
 let districtIndex = {};
@@ -81,15 +79,19 @@ const polygonList = $('#polygonList');
 const verifyPanel = $('#verifyPanel');
 const loadingOverlay = $('#loadingOverlay');
 
-// ---- Cloud Sync ----
+// ---- Cloud Sync via Google Sheets ----
 async function loadFromCloud() {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') {
+    setSyncStatus('error');
+    console.warn('Google Sheets API URL not configured. See README for setup.');
+    return false;
+  }
   try {
     setSyncStatus('loading');
-    const res = await fetch(API_URL, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Failed to load');
+    const res = await fetch(`${GSHEET_API}?action=getAll`);
+    // Apps Script redirects, fetch follows automatically
     const data = await res.json();
     if (data.verifications) {
-      // Convert old format (string) to new format (object) if needed
       Object.entries(data.verifications).forEach(([key, val]) => {
         if (typeof val === 'string') {
           verificationResults[key] = { status: val, user: 'unknown', timestamp: '' };
@@ -98,7 +100,6 @@ async function loadFromCloud() {
         }
       });
     }
-    // Load drawn polygons from cloud
     if (Array.isArray(data.drawnPolygons)) {
       drawnPolygons = data.drawnPolygons;
     }
@@ -112,63 +113,72 @@ async function loadFromCloud() {
 }
 
 async function saveToCloud() {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
   if (isSaving) return;
   isSaving = true;
   setSyncStatus('saving');
 
   try {
-    // Read current state first to merge (in case others saved while we worked)
-    let cloudData = { verifications: {} };
-    try {
-      const readRes = await fetch(API_URL, { cache: 'no-store' });
-      if (readRes.ok) cloudData = await readRes.json();
-    } catch (e) { /* use empty if read fails */ }
-
-    // Merge: our local results take priority for keys we changed
-    const merged = { ...cloudData.verifications, ...verificationResults };
-
-    // Merge drawn polygons (by district+id key, ours win)
-    const cloudDrawn = Array.isArray(cloudData.drawnPolygons) ? cloudData.drawnPolygons : [];
-    const drawnMap = {};
-    cloudDrawn.forEach(p => { drawnMap[`${p.district}:${p.id}`] = p; });
-    drawnPolygons.forEach(p => { drawnMap[`${p.district}:${p.id}`] = p; });
-    const mergedDrawn = Object.values(drawnMap);
-
-    const payload = {
-      _meta: {
-        created: '2026-04-07',
-        description: 'Coconut verification results - Tamil Nadu 2020',
-        lastUpdated: new Date().toISOString(),
-        lastUpdatedBy: currentUser,
-      },
-      verifications: merged,
-      drawnPolygons: mergedDrawn,
-    };
-
-    const res = await fetch(API_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const res = await fetch(GSHEET_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      // Apps Script doPost needs text/plain to avoid CORS preflight
+      body: JSON.stringify({
+        action: 'saveBatch',
+        verifications: verificationResults,
+        drawnPolygons: drawnPolygons,
+      }),
     });
-
-    if (!res.ok) throw new Error('Save failed');
-
-    // Update local with merged data
-    Object.entries(merged).forEach(([key, val]) => {
-      if (typeof val === 'string') {
-        verificationResults[key] = { status: val, user: 'unknown', timestamp: '' };
-      } else {
-        verificationResults[key] = val;
-      }
-    });
-    drawnPolygons = mergedDrawn;
-
+    await res.json();
     setSyncStatus('synced');
   } catch (e) {
     console.warn('Cloud save failed:', e);
     setSyncStatus('error');
   }
   isSaving = false;
+}
+
+// Save a single verification immediately (faster than batch)
+async function saveOneVerification(key, status, user, timestamp) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'saveVerification',
+        key, status, user, timestamp,
+      }),
+    });
+  } catch (e) {
+    console.warn('Save verification failed:', e);
+  }
+}
+
+async function saveOneDrawnPolygon(polygon) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'saveDrawnPolygon', ...polygon }),
+    });
+  } catch (e) {
+    console.warn('Save drawn polygon failed:', e);
+  }
+}
+
+async function deleteOneDrawnPolygon(id, district) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteDrawnPolygon', id, district }),
+    });
+  } catch (e) {
+    console.warn('Delete drawn polygon failed:', e);
+  }
 }
 
 function setSyncStatus(status) {
@@ -264,7 +274,7 @@ map.on(L.Draw.Event.CREATED, (e) => {
   };
 
   drawnPolygons.push(entry);
-  saveToCloud();
+  saveOneDrawnPolygon(entry);
 
   renderDrawnPolygonsOnMap();
   renderDrawnPolygonList();
@@ -409,7 +419,7 @@ function renderDrawnPolygonList() {
 function deleteDrawnPolygon(polyId) {
   if (!confirm('Delete this drawn polygon?')) return;
   drawnPolygons = drawnPolygons.filter(p => !(p.district === currentDistrict && p.id === polyId));
-  saveToCloud();
+  deleteOneDrawnPolygon(polyId, currentDistrict);
   renderDrawnPolygonsOnMap();
   renderDrawnPolygonList();
 }
@@ -699,8 +709,9 @@ function verifyPolygon(status) {
     timestamp: new Date().toISOString(),
   };
 
-  // Save to cloud (non-blocking)
-  saveToCloud();
+  // Save to Google Sheet (non-blocking, single row)
+  const ts = new Date().toISOString();
+  saveOneVerification(key, status, currentUser, ts);
 
   // Update UI
   polygonLayer.setStyle((feat) => getPolygonStyle(feat));
