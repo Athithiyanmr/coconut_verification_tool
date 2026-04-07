@@ -19,6 +19,8 @@ let verificationResults = {}; // { "District:id": { status, user, timestamp } }
 let currentFilter = 'all';
 let currentUser = '';
 let isSaving = false;
+let districtBoundaries = null; // GeoJSON of all district boundaries
+let boundaryLayer = null; // Currently displayed boundary on map
 
 // Drawn polygons state
 let drawnPolygons = []; // [{ district, id, geometry, area_ha, user, timestamp, note }]
@@ -33,40 +35,13 @@ const map = L.map('map', {
   zoomControl: true,
 });
 
-const satelliteTile = L.tileLayer(
-  'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-    maxZoom: 21,
-    attribution: 'Imagery &copy; Google',
-  }
-).addTo(map);
-
-const hybridTile = L.tileLayer(
+// Google Satellite + Labels (only basemap)
+L.tileLayer(
   'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
     maxZoom: 21,
     attribution: 'Imagery &copy; Google',
   }
-);
-
-const sentinel2Tile = L.tileLayer(
-  'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg', {
-    maxZoom: 14,
-    attribution: 'Sentinel-2 cloudless 2020 by EOX',
-  }
-);
-
-const esriTile = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-    attribution: 'Esri World Imagery',
-  }
-);
-
-L.control.layers({
-  'Google Satellite': satelliteTile,
-  'Google Satellite + Labels': hybridTile,
-  'Sentinel-2 2020': sentinel2Tile,
-  'Esri Latest Imagery': esriTile,
-}, null, { position: 'topright' }).addTo(map);
+).addTo(map);
 
 // ---- DOM Refs ----
 const $ = (s) => document.querySelector(s);
@@ -437,6 +412,12 @@ async function init() {
     districtSelect.appendChild(opt);
   });
 
+  // Load district boundaries for outline display
+  try {
+    const bRes = await fetch('data/district_boundaries.geojson');
+    districtBoundaries = await bRes.json();
+  } catch (e) { console.warn('Could not load district boundaries'); }
+
   // Set up draw layer (before cloud load so it's ready)
   setupDrawLayer();
 
@@ -493,6 +474,9 @@ async function loadDistrict(name) {
   geojsonData = await res.json();
   clearMap();
 
+  // Show district boundary outline
+  showDistrictBoundary(name);
+
   polygonLayer = L.geoJSON(geojsonData, {
     style: (feature) => getPolygonStyle(feature),
     onEachFeature: (feature, layer) => {
@@ -537,10 +521,34 @@ function getPolygonStyle(feature) {
 function clearMap() {
   if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
   if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
+  if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
   clearLabels();
   clearDrawnLabels();
   // Clear drawn layers from the featureGroup (don't remove the group itself)
   if (drawnLayer) drawnLayer.clearLayers();
+}
+
+function showDistrictBoundary(districtName) {
+  if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
+  if (!districtBoundaries) return;
+
+  const feature = districtBoundaries.features.find(
+    f => f.properties.name === districtName
+  );
+  if (!feature) return;
+
+  boundaryLayer = L.geoJSON(feature, {
+    style: {
+      color: '#ffffff',
+      weight: 2.5,
+      fillOpacity: 0,
+      dashArray: '8 4',
+      opacity: 0.8,
+    },
+    interactive: false,
+  }).addTo(map);
+
+  boundaryLayer.bringToBack();
 }
 
 function clearLabels() {
