@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coconut Polygon Verifier — Tamil Nadu 2020</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-row">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+          <circle cx="12" cy="13" r="2" fill="currentColor"/>
+          <circle cx="20" cy="13" r="2" fill="currentColor"/>
+          <circle cx="16" cy="19" r="2" fill="currentColor"/>
+        </svg>
+        <div>
+          <h1 class="logo-title">Coconut Verifier</h1>
+          <p class="logo-sub">Tamil Nadu 2020</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- District Selector -->
+    <div class="sidebar-section">
+      <label class="field-label" for="districtSelect">Select District</label>
+      <select id="districtSelect" class="select-input">
+        <option value="">— Choose a district —</option>
+      </select>
+      <div id="districtInfo" class="district-info hidden"></div>
+    </div>
+
+    <!-- Progress -->
+    <div class="sidebar-section" id="progressSection" style="display:none">
+      <div class="progress-header">
+        <span class="field-label">Verification Progress</span>
+        <span class="progress-count" id="progressCount">0 / 0</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-stats">
+        <span class="stat stat-yes"><span class="dot dot-yes"></span> Yes: <b id="statYes">0</b></span>
+        <span class="stat stat-no"><span class="dot dot-no"></span> No: <b id="statNo">0</b></span>
+        <span class="stat stat-skip"><span class="dot dot-skip"></span> Pending: <b id="statPending">0</b></span>
+      </div>
+    </div>
+
+    <!-- Polygon List -->
+    <div class="sidebar-section polygon-list-section" id="polygonListSection" style="display:none">
+      <div class="list-toolbar">
+        <label class="field-label">Polygons</label>
+        <div class="filter-btns">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="pending">Pending</button>
+          <button class="filter-btn" data-filter="yes">Yes</button>
+          <button class="filter-btn" data-filter="no">No</button>
+        </div>
+      </div>
+      <div class="polygon-list" id="polygonList"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="sidebar-footer" id="sidebarFooter" style="display:none">
+      <button class="btn btn-primary" id="exportBtn">Export Results (CSV)</button>
+      <button class="btn btn-outline" id="exportJsonBtn">Export GeoJSON</button>
+    </div>
+  </aside>
+
+  <!-- Map -->
+  <div class="map-container">
+    <div id="map"></div>
+
+    <!-- Floating Verification Panel -->
+    <div class="verify-panel hidden" id="verifyPanel">
+      <div class="verify-header">
+        <h3 id="verifyTitle">Polygon #1</h3>
+        <span class="verify-area" id="verifyArea"></span>
+        <button class="close-btn" id="closeVerify">&times;</button>
+      </div>
+      <p class="verify-hint">Toggle the overlay to see the satellite image beneath. Is this a coconut area?</p>
+      <div class="verify-toggle-row">
+        <label class="toggle-label">
+          <input type="checkbox" id="overlayToggle" checked />
+          <span class="toggle-switch"></span>
+          Show Polygon Overlay
+        </label>
+      </div>
+      <div class="verify-actions">
+        <button class="btn btn-yes" id="btnYes">Yes — Coconut</button>
+        <button class="btn btn-no" id="btnNo">No — Not Coconut</button>
+        <button class="btn btn-skip" id="btnSkip">Skip</button>
+      </div>
+      <div class="verify-nav">
+        <button class="btn btn-sm" id="btnPrev">&larr; Previous</button>
+        <button class="btn btn-sm" id="btnNext">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+      <div class="spinner"></div>
+      <p>Loading polygons...</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
