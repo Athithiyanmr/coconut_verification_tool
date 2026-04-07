@@ -20,6 +20,12 @@ let currentFilter = 'all';
 let currentUser = '';
 let isSaving = false;
 
+// Drawn polygons state
+let drawnPolygons = []; // [{ district, id, geometry, area_ha, user, timestamp, note }]
+let drawnLayer = null;    // L.FeatureGroup for draw plugin
+let drawControl = null;   // L.Control.Draw instance
+let drawnLabelMarkers = []; // map labels for drawn polygons
+
 // ---- Map Setup ----
 const map = L.map('map', {
   center: [10.8, 78.7],
@@ -41,9 +47,25 @@ const hybridTile = L.tileLayer(
   }
 );
 
+const sentinel2Tile = L.tileLayer(
+  'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg', {
+    maxZoom: 14,
+    attribution: 'Sentinel-2 cloudless 2020 by EOX',
+  }
+);
+
+const esriTile = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Esri World Imagery',
+  }
+);
+
 L.control.layers({
-  'Satellite': satelliteTile,
-  'Satellite + Labels': hybridTile,
+  'Google Satellite': satelliteTile,
+  'Google Satellite + Labels': hybridTile,
+  'Sentinel-2 2020': sentinel2Tile,
+  'Esri Latest Imagery': esriTile,
 }, null, { position: 'topright' }).addTo(map);
 
 // ---- DOM Refs ----
@@ -74,6 +96,10 @@ async function loadFromCloud() {
         }
       });
     }
+    // Load drawn polygons from cloud
+    if (Array.isArray(data.drawnPolygons)) {
+      drawnPolygons = data.drawnPolygons;
+    }
     setSyncStatus('synced');
     return true;
   } catch (e) {
@@ -99,6 +125,13 @@ async function saveToCloud() {
     // Merge: our local results take priority for keys we changed
     const merged = { ...cloudData.verifications, ...verificationResults };
 
+    // Merge drawn polygons (by district+id key, ours win)
+    const cloudDrawn = Array.isArray(cloudData.drawnPolygons) ? cloudData.drawnPolygons : [];
+    const drawnMap = {};
+    cloudDrawn.forEach(p => { drawnMap[`${p.district}:${p.id}`] = p; });
+    drawnPolygons.forEach(p => { drawnMap[`${p.district}:${p.id}`] = p; });
+    const mergedDrawn = Object.values(drawnMap);
+
     const payload = {
       _meta: {
         created: '2026-04-07',
@@ -107,6 +140,7 @@ async function saveToCloud() {
         lastUpdatedBy: currentUser,
       },
       verifications: merged,
+      drawnPolygons: mergedDrawn,
     };
 
     const res = await fetch(BLOB_URL, {
@@ -125,6 +159,7 @@ async function saveToCloud() {
         verificationResults[key] = val;
       }
     });
+    drawnPolygons = mergedDrawn;
 
     setSyncStatus('synced');
   } catch (e) {
@@ -161,6 +196,222 @@ function getVerifier(key) {
   return typeof entry === 'object' ? (entry.user || '') : '';
 }
 
+// ---- Leaflet.draw setup ----
+function setupDrawLayer() {
+  drawnLayer = new L.FeatureGroup();
+  map.addLayer(drawnLayer);
+}
+
+function enableDrawControl() {
+  // Remove existing draw control if present
+  if (drawControl) { map.removeControl(drawControl); drawControl = null; }
+
+  drawControl = new L.Control.Draw({
+    position: 'topleft',
+    draw: {
+      polygon: {
+        allowIntersection: false,
+        showArea: true,
+        shapeOptions: {
+          color: '#2980b9',
+          weight: 2,
+          dashArray: '6 4',
+          fillColor: '#2980b9',
+          fillOpacity: 0.2,
+        },
+      },
+      polyline: false,
+      rectangle: false,
+      circle: false,
+      circlemarker: false,
+      marker: false,
+    },
+    edit: { featureGroup: drawnLayer },
+  });
+  map.addControl(drawControl);
+}
+
+map.on(L.Draw.Event.CREATED, (e) => {
+  if (!currentDistrict || !currentUser) {
+    alert('Please select a district and enter your name before drawing.');
+    return;
+  }
+
+  const layer = e.layer;
+  const geojson = layer.toGeoJSON();
+
+  // Calculate area in hectares
+  const area_ha = calculateAreaHa(geojson.geometry);
+
+  // Prompt for note
+  const note = prompt('Add a note for this polygon (e.g. "New coconut area spotted"):') || 'User drawn';
+
+  // Unique ID within district
+  const districtDrawn = drawnPolygons.filter(p => p.district === currentDistrict);
+  const nextNum = districtDrawn.length + 1;
+  const polyId = `new_${nextNum}`;
+
+  const entry = {
+    district: currentDistrict,
+    id: polyId,
+    geometry: geojson.geometry,
+    area_ha: area_ha,
+    user: currentUser,
+    timestamp: new Date().toISOString(),
+    note: note,
+  };
+
+  drawnPolygons.push(entry);
+  saveToCloud();
+
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+});
+
+function calculateAreaHa(geometry) {
+  // Shoelace formula on the outer ring, converted to approximate hectares
+  let coords;
+  if (geometry.type === 'Polygon') {
+    coords = geometry.coordinates[0];
+  } else if (geometry.type === 'MultiPolygon') {
+    coords = geometry.coordinates[0][0];
+  }
+  if (!coords || coords.length < 3) return 0;
+
+  // Use L.GeometryUtil if available, else approximate with spherical formula
+  const latlngs = coords.map(c => L.latLng(c[1], c[0]));
+  if (window.L && L.GeometryUtil && L.GeometryUtil.geodesicArea) {
+    const m2 = L.GeometryUtil.geodesicArea(latlngs);
+    return parseFloat((m2 / 10000).toFixed(4));
+  }
+
+  // Fallback: approximate using a simple planar calculation scaled by cos(lat)
+  const R = 6371000; // earth radius in metres
+  const toRad = d => d * Math.PI / 180;
+  let area = 0;
+  const n = coords.length;
+  for (let i = 0; i < n - 1; i++) {
+    const [x1, y1] = coords[i];
+    const [x2, y2] = coords[i + 1];
+    area += toRad(x2 - x1) * (2 + Math.sin(toRad(y1)) + Math.sin(toRad(y2)));
+  }
+  area = Math.abs(area * R * R / 2);
+  return parseFloat((area / 10000).toFixed(4));
+}
+
+function renderDrawnPolygonsOnMap() {
+  if (!drawnLayer) return;
+  drawnLayer.clearLayers();
+  clearDrawnLabels();
+
+  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+  districtPolys.forEach(entry => {
+    const layer = L.geoJSON(entry.geometry, {
+      style: {
+        color: '#2980b9',
+        weight: 2,
+        dashArray: '6 4',
+        fillColor: '#2980b9',
+        fillOpacity: 0.2,
+      },
+    });
+    layer.on('click', () => zoomToDrawnPolygon(entry));
+    drawnLayer.addLayer(layer);
+
+    // Add label
+    const centroid = getCentroid(entry.geometry);
+    if (centroid) {
+      const latlng = L.latLng(centroid[1], centroid[0]);
+      const marker = L.marker(latlng, {
+        icon: L.divIcon({
+          className: 'drawn-label',
+          html: `N${entry.id.replace('new_', '')}`,
+          iconSize: [26, 18],
+          iconAnchor: [13, 9],
+        }),
+        interactive: true,
+      }).addTo(map);
+      marker.on('click', () => zoomToDrawnPolygon(entry));
+      drawnLabelMarkers.push(marker);
+    }
+  });
+}
+
+function clearDrawnLabels() {
+  drawnLabelMarkers.forEach(m => map.removeLayer(m));
+  drawnLabelMarkers = [];
+}
+
+function addDrawnLabels() {
+  // Re-render labels on map move (they're managed by renderDrawnPolygonsOnMap)
+  // No-op here since renderDrawnPolygonsOnMap handles it; added for completeness
+}
+
+function zoomToDrawnPolygon(entry) {
+  const layer = L.geoJSON(entry.geometry);
+  map.fitBounds(layer.getBounds(), { padding: [60, 60], maxZoom: 18 });
+}
+
+function renderDrawnPolygonList() {
+  const list = $('#drawnPolygonList');
+  const empty = $('#drawnEmpty');
+  if (!list) return;
+
+  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+
+  if (districtPolys.length === 0) {
+    if (empty) empty.style.display = '';
+    // Remove any items
+    list.querySelectorAll('.drawn-polygon-item').forEach(el => el.remove());
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  // Rebuild list
+  list.querySelectorAll('.drawn-polygon-item').forEach(el => el.remove());
+
+  districtPolys.forEach((entry, idx) => {
+    const num = idx + 1;
+    const displayId = `N${entry.id.replace('new_', '')}`;
+    const isOwner = entry.user === currentUser;
+    const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : '';
+
+    const div = document.createElement('div');
+    div.className = 'drawn-polygon-item';
+    div.innerHTML = `
+      <div class="dp-id">${displayId}</div>
+      <div class="dp-info">
+        <div class="dp-note" title="${entry.note}">${entry.note}</div>
+        <div class="dp-meta">${entry.area_ha} ha &middot; ${entry.user} &middot; ${ts}</div>
+      </div>
+      ${isOwner ? `<button class="btn-delete-drawn" data-id="${entry.id}">Delete</button>` : ''}
+    `;
+
+    div.addEventListener('click', (e) => {
+      if (e.target.classList.contains('btn-delete-drawn')) return;
+      zoomToDrawnPolygon(entry);
+    });
+
+    const delBtn = div.querySelector('.btn-delete-drawn');
+    if (delBtn) {
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteDrawnPolygon(entry.id);
+      });
+    }
+
+    list.appendChild(div);
+  });
+}
+
+function deleteDrawnPolygon(polyId) {
+  if (!confirm('Delete this drawn polygon?')) return;
+  drawnPolygons = drawnPolygons.filter(p => !(p.district === currentDistrict && p.id === polyId));
+  saveToCloud();
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+}
+
 // ---- Init ----
 async function init() {
   const res = await fetch('data/districts.json');
@@ -173,6 +424,9 @@ async function init() {
     opt.textContent = `${name} (${districtIndex[name].count} polygons)`;
     districtSelect.appendChild(opt);
   });
+
+  // Set up draw layer (before cloud load so it's ready)
+  setupDrawLayer();
 
   // Load cloud data
   await loadFromCloud();
@@ -240,10 +494,16 @@ async function loadDistrict(name) {
   progressSection.style.display = '';
   polygonListSection.style.display = '';
   sidebarFooter.style.display = '';
+  $('#drawnPolygonsSection').style.display = '';
 
   renderPolygonList();
   updateProgress();
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
   loadingOverlay.classList.add('hidden');
+
+  // Enable the draw control now a district is selected
+  enableDrawControl();
 
   map.off('moveend', onMapMove);
   map.on('moveend', onMapMove);
@@ -266,6 +526,9 @@ function clearMap() {
   if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
   if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
   clearLabels();
+  clearDrawnLabels();
+  // Clear drawn layers from the featureGroup (don't remove the group itself)
+  if (drawnLayer) drawnLayer.clearLayers();
 }
 
 function clearLabels() {
@@ -311,7 +574,7 @@ function addLabels() {
   });
 }
 
-function onMapMove() { addLabels(); }
+function onMapMove() { addLabels(); addDrawnLabels(); }
 
 function getCentroid(geometry) {
   let coords;
@@ -572,7 +835,7 @@ function updateProgress() {
 // ---- Export CSV ----
 $('#exportBtn').addEventListener('click', () => {
   if (!geojsonData || !currentDistrict) return;
-  let csv = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp\n';
+  let csv = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n';
   geojsonData.features.forEach(f => {
     const id = f.properties.id;
     const key = `${currentDistrict}:${id}`;
@@ -581,7 +844,12 @@ $('#exportBtn').addEventListener('click', () => {
     const entry = verificationResults[key];
     const ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
     const centroid = getCentroid(f.geometry);
-    csv += `"${currentDistrict}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}"\n`;
+    csv += `"${currentDistrict}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}",training_label\n`;
+  });
+  // Append drawn polygons
+  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
+    const centroid = getCentroid(p.geometry);
+    csv += `"${currentDistrict}",${p.id},${p.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},user_drawn,"${p.user}","${p.timestamp}",user_drawn\n`;
   });
   downloadFile(csv, `coconut_verification_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.csv`, 'text/csv');
 });
@@ -592,9 +860,24 @@ $('#exportJsonBtn').addEventListener('click', () => {
   const output = JSON.parse(JSON.stringify(geojsonData));
   output.features.forEach(f => {
     const key = `${currentDistrict}:${f.properties.id}`;
-    const entry = verificationResults[key];
     f.properties.verification = getStatus(key) || 'pending';
     f.properties.verified_by = getVerifier(key);
+    f.properties.source = 'training_label';
+  });
+  // Add drawn polygons as features
+  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
+    output.features.push({
+      type: 'Feature',
+      geometry: p.geometry,
+      properties: {
+        id: p.id,
+        area_ha: p.area_ha,
+        note: p.note,
+        user: p.user,
+        timestamp: p.timestamp,
+        source: 'user_drawn',
+      },
+    });
   });
   const json = JSON.stringify(output, null, 2);
   downloadFile(json, `coconut_verified_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.geojson`, 'application/json');
@@ -642,7 +925,9 @@ setInterval(async () => {
     if (currentDistrict && geojsonData) {
       polygonLayer.setStyle((feat) => getPolygonStyle(feat));
       updateProgress();
-      // Don't re-render list to avoid disrupting scroll position
+      renderDrawnPolygonsOnMap();
+      renderDrawnPolygonList();
+      // Don't re-render training polygon list to avoid disrupting scroll position
     }
   }
 }, 60000);

@@ -8,6 +8,8 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -83,6 +85,14 @@
         </div>
       </div>
       <div class="polygon-list" id="polygonList"></div>
+    </div>
+
+    <!-- New Polygons (user-drawn) -->
+    <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
+      <label class="field-label">New Polygons</label>
+      <div class="drawn-polygon-list" id="drawnPolygonList">
+        <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
+      </div>
     </div>
 
     <!-- Actions -->
