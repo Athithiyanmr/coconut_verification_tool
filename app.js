@@ -1092,3 +1092,18 @@ setInterval(async () => {
 
 // ---- Init ----
 init();
+
+// ---- Visual Guide Panel ----
+(function() {
+  var guideBtn = document.getElementById('guideToggle');
+  var guidePanel = document.getElementById('guidePanel');
+  var closeGuide = document.getElementById('closeGuide');
+  if (guideBtn && guidePanel) {
+    guideBtn.addEventListener('click', function() {
+      guidePanel.classList.toggle('hidden');
+    });
+    closeGuide.addEventListener('click', function() {
+      guidePanel.classList.add('hidden');
+    });
+  }
+})();

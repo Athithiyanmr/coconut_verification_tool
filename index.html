@@ -136,6 +136,74 @@
       </div>
     </div>
 
+    <!-- Visual Guide Button -->
+    <button class="guide-fab" id="guideToggle" title="Visual Reference Guide">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Visual Guide
+    </button>
+
+    <!-- Visual Guide Panel -->
+    <div class="guide-panel hidden" id="guidePanel">
+      <div class="guide-header">
+        <h3>Visual Reference Guide</h3>
+        <p class="guide-subtitle">Compare with these examples when unsure</p>
+        <button class="close-btn" id="closeGuide">&times;</button>
+      </div>
+      <div class="guide-scroll">
+        <!-- YES Section -->
+        <div class="guide-section">
+          <div class="guide-section-label guide-label-yes">YES — Coconut</div>
+          <div class="guide-grid">
+            <div class="guide-card guide-card-yes">
+              <img src="docs/yes_1_namakkal.png" alt="Namakkal coconut plantation" loading="lazy" />
+              <span class="guide-cap">Namakkal — Dense plantation, regular grid spacing</span>
+            </div>
+            <div class="guide-card guide-card-yes">
+              <img src="docs/yes_2_cuddalore.png" alt="Cuddalore coconut plantation" loading="lazy" />
+              <span class="guide-cap">Cuddalore — Coconut adjacent to cropland</span>
+            </div>
+            <div class="guide-card guide-card-yes">
+              <img src="docs/yes_3_ariyalur.png" alt="Ariyalur coconut plantation" loading="lazy" />
+              <span class="guide-cap">Ariyalur — Mature palms, star-shaped fronds</span>
+            </div>
+            <div class="guide-card guide-card-yes">
+              <img src="docs/yes_4_chennai.png" alt="Chennai coconut palms" loading="lazy" />
+              <span class="guide-cap">Chennai — High zoom, individual fronds visible</span>
+            </div>
+          </div>
+          <div class="guide-tip guide-tip-yes">
+            Round palm crowns in regular grid &bull; Lighter green with gaps between trees &bull; Star/rosette frond pattern at high zoom
+          </div>
+        </div>
+
+        <!-- NO Section -->
+        <div class="guide-section">
+          <div class="guide-section-label guide-label-no">NO — Not Coconut</div>
+          <div class="guide-grid">
+            <div class="guide-card guide-card-no">
+              <img src="docs/no_1_ariyalur.png" alt="Scattered trees, not coconut" loading="lazy" />
+              <span class="guide-cap">Ariyalur — Scattered neem/tamarind, no pattern</span>
+            </div>
+            <div class="guide-card guide-card-no">
+              <img src="docs/no_2_chennai.png" alt="Urban tree cover" loading="lazy" />
+              <span class="guide-cap">Chennai — Urban tree cover near housing</span>
+            </div>
+            <div class="guide-card guide-card-no">
+              <img src="docs/no_3_ariyalur.png" alt="Cropland" loading="lazy" />
+              <span class="guide-cap">Ariyalur — Cropland, harvested fields</span>
+            </div>
+            <div class="guide-card guide-card-no">
+              <img src="docs/no_4_villupuram.png" alt="Barren land" loading="lazy" />
+              <span class="guide-cap">Villupuram — Barren / fallow agricultural land</span>
+            </div>
+          </div>
+          <div class="guide-tip guide-tip-no">
+            Irregular canopy, no spacing &bull; Mixed tree species &bull; Cropland or barren fields &bull; Urban buildings/roads visible
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading Spinner -->
     <div class="loading-overlay hidden" id="loadingOverlay">
       <div class="spinner"></div>
