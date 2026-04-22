@@ -28,6 +28,11 @@
   --shadow: 0 2px 12px rgba(50,45,30,.08);
   --shadow-lg: 0 8px 28px rgba(50,45,30,.14);
   --sidebar-w: 340px;
+  --blue: #2980b9;
+  --blue-light: #eaf4fb;
+  --blue-border: #1a6fa0;
+  --edit-orange: #e67e22;
+  --edit-orange-light: #fef5e7;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -246,7 +251,6 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Leaflet tooltip overrides */
 .leaflet-tooltip { font-family: var(--font); font-size: 12px; }
 
 /* --- User Modal --- */
@@ -299,7 +303,6 @@ body {
   display: inline-block;
 }
 .verified-by.hidden { display: none; }
-
 .poly-verifier { font-size: 10px; color: var(--text-faint); margin-top: 1px; }
 
 /* --- Visual Guide --- */
@@ -329,10 +332,7 @@ body {
 .guide-header h3 { font-size: 15px; font-weight: 700; margin: 0; }
 .guide-subtitle { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; }
 .guide-header .close-btn { position: absolute; top: 12px; right: 14px; }
-
-.guide-scroll {
-  flex: 1; overflow-y: auto; padding: 14px 18px 18px;
-}
+.guide-scroll { flex: 1; overflow-y: auto; padding: 14px 18px 18px; }
 .guide-section { margin-bottom: 18px; }
 .guide-section-label {
   font-size: 13px; font-weight: 700; padding: 5px 12px;
@@ -340,41 +340,17 @@ body {
 }
 .guide-label-yes { background: #e8f3ea; color: var(--yes); }
 .guide-label-no { background: #fce8e6; color: var(--no); }
-
-.guide-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-}
-.guide-card {
-  border-radius: 8px; overflow: hidden;
-  border: 2px solid transparent;
-}
-.guide-card img {
-  width: 100%; height: 140px; object-fit: cover; display: block;
-}
+.guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.guide-card { border-radius: 8px; overflow: hidden; border: 2px solid transparent; }
+.guide-card img { width: 100%; height: 140px; object-fit: cover; display: block; }
 .guide-card-yes { border-color: var(--yes); }
 .guide-card-no { border-color: var(--no); }
-.guide-cap {
-  display: block; font-size: 10px; color: var(--text-muted);
-  padding: 5px 8px; line-height: 1.3;
-  background: var(--bg);
-}
-
-.guide-tip {
-  font-size: 10px; line-height: 1.4; padding: 8px 10px;
-  border-radius: 6px; margin-top: 8px;
-}
+.guide-cap { display: block; font-size: 10px; color: var(--text-muted); padding: 5px 8px; line-height: 1.3; background: var(--bg); }
+.guide-tip { font-size: 10px; line-height: 1.4; padding: 8px 10px; border-radius: 6px; margin-top: 8px; }
 .guide-tip-yes { background: #e8f3ea; color: var(--yes); }
 .guide-tip-no { background: #fce8e6; color: var(--no); }
 
-@media (max-width: 768px) {
-  .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
-  .guide-fab { top: auto; bottom: 80px; right: 12px; }
-  .guide-card img { height: 100px; }
-}
-
-.export-divider {
-  height: 1px; background: var(--divider); margin: 4px 0;
-}
+.export-divider { height: 1px; background: var(--divider); margin: 4px 0; }
 .btn-export-all {
   background: #1a5276; color: #fff; padding: 9px 16px;
   border: none; border-radius: var(--radius); font: inherit;
@@ -392,60 +368,74 @@ body {
 .btn-export-all-geo:hover { background: #eaf2f8; }
 .btn-export-all-geo:disabled { opacity: .5; cursor: wait; }
 
-/* --- Drawn Polygons --- */
-:root {
-  --blue: #2980b9;
-  --blue-light: #eaf4fb;
-  --blue-border: #1a6fa0;
+/* ============================================================
+   DRAWN POLYGONS — Improved Card UI
+   ============================================================ */
+.drawn-polygons-section { border-bottom: 1px solid var(--divider); }
+
+.drawn-polygon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 2px 4px;
 }
 
-.drawn-polygons-section {
-  border-bottom: 1px solid var(--divider);
-}
-.drawn-polygon-list {
-  max-height: 180px;
-  overflow-y: auto;
-  margin: 0 -18px;
-  padding: 0 18px;
-}
-.drawn-empty {
-  font-size: 12px;
-  color: var(--text-faint);
-  padding: 6px 0;
-}
+.drawn-empty { font-size: 12px; color: var(--text-faint); padding: 6px 0; }
+
 .drawn-polygon-item {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
   border-radius: var(--radius);
-  border: 1px solid transparent;
+  border: 1px solid rgba(41,128,185,.25);
   border-left: 3px solid var(--blue);
   background: var(--blue-light);
-  margin-bottom: 4px;
-  cursor: pointer;
-  transition: background .12s;
+  transition: background .12s, border-color .12s;
 }
-.drawn-polygon-item:hover {
-  background: #d4eaf7;
+.drawn-polygon-item:hover { background: #d4eaf7; }
+
+/* Editing state — orange highlight */
+.drawn-polygon-item.dp-editing {
+  border-left-color: var(--edit-orange);
+  background: var(--edit-orange-light);
+  border-color: rgba(230,126,34,.35);
 }
-.drawn-polygon-item .dp-id {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+.drawn-polygon-item.dp-editing:hover { background: #fde8c8; }
+
+/* Card header row */
+.dp-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.dp-id-badge {
   background: var(--blue);
   color: #fff;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
+  border-radius: 5px;
+  padding: 2px 8px;
   font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
   flex-shrink: 0;
 }
-.drawn-polygon-item .dp-info {
-  flex: 1;
-  min-width: 0;
+.dp-editing .dp-id-badge { background: var(--edit-orange); }
+
+.dp-area {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(0,0,0,.05);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-variant-numeric: tabular-nums;
 }
-.drawn-polygon-item .dp-note {
+
+/* Note text */
+.dp-note-text {
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
@@ -453,26 +443,96 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.drawn-polygon-item .dp-meta {
+
+/* Meta row */
+.dp-meta-row {
   font-size: 11px;
   color: var(--text-muted);
-  margin-top: 1px;
 }
-.btn-delete-drawn {
-  background: none;
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  border-radius: 4px;
-  padding: 2px 7px;
+
+/* Action buttons row */
+.dp-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.dp-btn {
   font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.8);
   cursor: pointer;
-  flex-shrink: 0;
-  align-self: center;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-weight: 500;
   transition: all .12s;
+  line-height: 1.4;
 }
-.btn-delete-drawn:hover {
+.dp-btn:hover { background: #fff; color: var(--text); border-color: var(--blue); }
+
+.dp-btn-edit:hover, .dp-btn-active {
+  color: var(--edit-orange) !important;
+  border-color: var(--edit-orange) !important;
+  background: var(--edit-orange-light) !important;
+}
+
+.dp-btn-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
   background: var(--danger-light);
 }
+
+/* ---- Edit Mode Bar (inside sidebar) ---- */
+.edit-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--edit-orange-light);
+  border: 1px solid rgba(230,126,34,.35);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.edit-mode-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--edit-orange);
+  min-width: 0;
+}
+.edit-mode-btns { display: flex; gap: 6px; }
+
+.btn-edit-save {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--edit-orange);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s;
+}
+.btn-edit-save:hover { background: #ca6f1e; }
+
+.btn-edit-cancel {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .12s;
+}
+.btn-edit-cancel:hover { border-color: var(--danger); color: var(--danger); }
 
 /* Blue drawn-polygon map labels */
 .drawn-label {
@@ -486,12 +546,19 @@ body {
   white-space: nowrap;
   font-family: var(--font);
 }
+.drawn-label-editing {
+  background: rgba(230,126,34,.9);
+  border-color: #ca6f1e;
+}
 
-/* Responsive */
+/* --- Responsive --- */
 @media (max-width: 768px) {
   .sidebar { width: 100%; min-width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--divider); }
   body { flex-direction: column; }
   .map-container { flex: 1; height: 60vh; }
   .verify-panel { min-width: 300px; max-width: 90vw; bottom: 12px; }
   .polygon-list-section { max-height: 20vh; }
+  .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
+  .guide-fab { top: auto; bottom: 80px; right: 12px; }
+  .guide-card img { height: 100px; }
 }
