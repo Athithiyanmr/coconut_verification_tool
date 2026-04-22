@@ -7,7 +7,7 @@
   --surface: #fdfcf7;
   --surface-2: #fff;
   --border: #d6d2c4;
-  --divider: #e8e5dc;
+  --divider: #ebe8df;
   --text: #2b2b1e;
   --text-muted: #6d6b5e;
   --text-faint: #a8a698;
@@ -18,12 +18,15 @@
   --danger-light: #fce8e6;
   --warning: #b3752b;
   --warning-light: #fef5e7;
+  --modify: #f39c12;
+  --modify-light: #fef5e7;
   --yes: #27ae60;
   --no: #e74c3c;
-  --pending: #bbb;
+  --pending: #c8c5bc;
   --font: 'DM Sans', system-ui, sans-serif;
   --radius: 8px;
-  --shadow: 0 2px 12px rgba(50,45,30,.1);
+  --shadow: 0 2px 12px rgba(50,45,30,.08);
+  --shadow-lg: 0 8px 28px rgba(50,45,30,.14);
   --sidebar-w: 340px;
 }
 
@@ -54,10 +57,10 @@ body {
   border-bottom: 1px solid var(--divider);
 }
 .logo-row { display: flex; align-items: center; gap: 10px; color: var(--primary); }
-.logo-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.logo-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .logo-sub { font-size: 12px; color: var(--text-muted); }
 
-.sidebar-section { padding: 16px 18px; border-bottom: 1px solid var(--divider); }
+.sidebar-section { padding: 14px 18px; border-bottom: 1px solid var(--divider); }
 .field-label {
   display: block; font-size: 11px; font-weight: 600;
   color: var(--text-muted); text-transform: uppercase;
@@ -122,8 +125,8 @@ body {
 .poly-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: var(--radius);
-  cursor: pointer; transition: background .12s;
-  border: 1px solid transparent; margin-bottom: 2px;
+  cursor: pointer; transition: all .15s ease;
+  border: 1px solid transparent; margin-bottom: 3px;
 }
 .poly-item:hover { background: var(--primary-light); }
 .poly-item.active { border-color: var(--primary); background: var(--primary-light); }
@@ -159,11 +162,14 @@ body {
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-outline { background: none; border: 1px solid var(--border); color: var(--text-muted); }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
-.btn-yes { background: var(--yes); color: #fff; flex: 1; }
-.btn-yes:hover { filter: brightness(1.1); }
-.btn-no { background: var(--no); color: #fff; flex: 1; }
-.btn-no:hover { filter: brightness(1.1); }
-.btn-skip { background: var(--divider); color: var(--text-muted); flex: .6; }
+.btn-yes { background: var(--yes); color: #fff; flex: 1; font-weight: 600; }
+.btn-yes:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-no { background: var(--no); color: #fff; flex: 1; font-weight: 600; }
+.btn-no:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-modify { background: #f39c12; color: #fff; flex: 1; font-weight: 600; }
+.btn-modify:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-skip { background: var(--divider); color: var(--text-muted); flex: 1; }
+.btn-skip:hover { background: var(--border); }
 .btn-sm { padding: 6px 14px; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); }
 .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
 
@@ -187,8 +193,9 @@ body {
 .verify-panel {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
   z-index: 1000; background: var(--surface); border: 1px solid var(--divider);
-  border-radius: 12px; padding: 18px 22px; box-shadow: var(--shadow);
-  min-width: 380px; max-width: 460px;
+  border-radius: 14px; padding: 18px 22px; box-shadow: var(--shadow-lg);
+  min-width: 420px; max-width: 480px;
+  backdrop-filter: blur(8px);
 }
 .verify-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .verify-header h3 { font-size: 15px; font-weight: 700; }
@@ -220,7 +227,9 @@ body {
 .toggle-label input:checked + .toggle-switch { background: var(--primary); }
 .toggle-label input:checked + .toggle-switch::after { transform: translateX(16px); }
 
-.verify-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+.verify-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+.verify-actions-secondary { margin-bottom: 10px; }
+.btn { transition: all .15s ease; }
 .verify-nav { display: flex; justify-content: space-between; }
 
 /* Loading */

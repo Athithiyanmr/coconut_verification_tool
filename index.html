@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <link rel="stylesheet" href="style.css" />
@@ -126,9 +127,12 @@
         </label>
       </div>
       <div class="verify-actions">
-        <button class="btn btn-yes" id="btnYes">Yes — Coconut</button>
-        <button class="btn btn-no" id="btnNo">No — Not Coconut</button>
-        <button class="btn btn-skip" id="btnSkip">Skip</button>
+        <button class="btn btn-yes" id="btnYes" title="Y">Yes — Coconut</button>
+        <button class="btn btn-no" id="btnNo" title="N">No — Not Coconut</button>
+      </div>
+      <div class="verify-actions verify-actions-secondary">
+        <button class="btn btn-modify" id="btnModify" title="M">Modify</button>
+        <button class="btn btn-skip" id="btnSkip" title="Space">Skip</button>
       </div>
       <div class="verify-nav">
         <button class="btn btn-sm" id="btnPrev">&larr; Previous</button>

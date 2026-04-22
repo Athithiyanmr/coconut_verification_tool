@@ -67,7 +67,12 @@ async function loadFromCloud() {
     // Apps Script redirects, fetch follows automatically
     const data = await res.json();
     if (data.verifications) {
+      // Reset local state first to properly reflect cloud (including cleared entries)
+      verificationResults = {};
       Object.entries(data.verifications).forEach(([key, val]) => {
+        const status = typeof val === 'string' ? val : val.status;
+        // Skip 'pending' entries - treat them as cleared
+        if (status === 'pending' || !status) return;
         if (typeof val === 'string') {
           verificationResults[key] = { status: val, user: 'unknown', timestamp: '' };
         } else {
@@ -227,6 +232,19 @@ map.on(L.Draw.Event.CREATED, (e) => {
   const layer = e.layer;
   const geojson = layer.toGeoJSON();
 
+  // Check for overlaps with existing training polygons
+  const overlaps = detectOverlaps(geojson);
+  if (overlaps.length > 0) {
+    const ids = overlaps.slice(0, 5).map(o => `#${o.id} (${o.overlap_pct}% overlap)`).join(', ');
+    const extra = overlaps.length > 5 ? ` and ${overlaps.length - 5} more` : '';
+    const msg = `⚠️ Your new polygon overlaps ${overlaps.length} existing training polygon${overlaps.length > 1 ? 's' : ''}:\n\n${ids}${extra}\n\nNew polygons are meant for coconut areas NOT already in the training data.\n\nDo you still want to save this polygon?`;
+    if (!confirm(msg)) {
+      // Cancel - remove the drawn shape from the map
+      if (drawnLayer) drawnLayer.removeLayer(layer);
+      return;
+    }
+  }
+
   // Calculate area in hectares
   const area_ha = calculateAreaHa(geojson.geometry);
 
@@ -246,6 +264,7 @@ map.on(L.Draw.Event.CREATED, (e) => {
     user: currentUser,
     timestamp: new Date().toISOString(),
     note: note,
+    overlaps_existing: overlaps.length > 0 ? overlaps.map(o => o.id) : [],
   };
 
   drawnPolygons.push(entry);
@@ -254,6 +273,37 @@ map.on(L.Draw.Event.CREATED, (e) => {
   renderDrawnPolygonsOnMap();
   renderDrawnPolygonList();
 });
+
+function detectOverlaps(newFeature) {
+  if (!geojsonData || !window.turf) return [];
+  const newGeom = newFeature.geometry || newFeature;
+  const newPoly = newFeature.type === 'Feature' ? newFeature : turf.feature(newGeom);
+
+  // Get bounding box of new polygon for fast pre-filtering
+  const newBbox = turf.bbox(newPoly);
+
+  const overlaps = [];
+  for (const feat of geojsonData.features) {
+    try {
+      const featBbox = turf.bbox(feat);
+      // Quick bbox reject
+      if (newBbox[2] < featBbox[0] || newBbox[0] > featBbox[2] ||
+          newBbox[3] < featBbox[1] || newBbox[1] > featBbox[3]) continue;
+
+      // Check actual intersection
+      const intersection = turf.intersect(newPoly, feat);
+      if (intersection) {
+        const interArea = turf.area(intersection);
+        const newArea = turf.area(newPoly);
+        const overlapPct = (interArea / newArea * 100).toFixed(1);
+        if (interArea > 1) { // More than 1 sq m
+          overlaps.push({ id: feat.properties.id, overlap_pct: overlapPct });
+        }
+      }
+    } catch (err) { /* skip invalid geoms */ }
+  }
+  return overlaps;
+}
 
 function calculateAreaHa(geometry) {
   // Shoelace formula on the outer ring, converted to approximate hectares
@@ -697,6 +747,35 @@ function updateOverlayVisibility(show) {
 $('#btnYes').addEventListener('click', () => verifyPolygon('yes'));
 $('#btnNo').addEventListener('click', () => verifyPolygon('no'));
 $('#btnSkip').addEventListener('click', () => navigatePolygon(1));
+$('#btnModify').addEventListener('click', () => modifyVerification());
+
+function modifyVerification() {
+  if (!selectedPolygonId || !currentDistrict) return;
+  const key = `${currentDistrict}:${selectedPolygonId}`;
+  const existing = verificationResults[key];
+  if (!existing) {
+    alert('This polygon has no verification to modify yet.');
+    return;
+  }
+  const prevUser = typeof existing === 'object' ? existing.user : 'unknown';
+  const prevStatus = getStatus(key);
+  if (!confirm(`This polygon was marked "${prevStatus === 'yes' ? 'Coconut' : 'Not Coconut'}" by ${prevUser}.\n\nClear the verification so you can re-mark it?`)) return;
+
+  // Clear local state
+  delete verificationResults[key];
+  // Save the cleared state to cloud as 'pending'
+  saveOneVerification(key, 'pending', currentUser, new Date().toISOString());
+
+  // Refresh UI
+  polygonLayer.setStyle((feat) => getPolygonStyle(feat));
+  updateProgress();
+  renderPolygonList();
+  addLabels();
+  updateVerifyButtonStates(null);
+
+  const verifiedByEl = $('#verifiedBy');
+  if (verifiedByEl) verifiedByEl.classList.add('hidden');
+}
 $('#closeVerify').addEventListener('click', () => {
   verifyPanel.classList.add('hidden');
   selectedPolygonId = null;
@@ -1059,6 +1138,7 @@ document.addEventListener('keydown', (e) => {
   if (!verifyPanel.classList.contains('hidden')) {
     if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); verifyPolygon('yes'); }
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); verifyPolygon('no'); }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); modifyVerification(); }
     if (e.key === 's' || e.key === 'S' || e.key === ' ') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePolygon(-1); }
