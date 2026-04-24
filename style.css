@@ -110,7 +110,7 @@ body {
 .dot-skip { background: var(--pending); }
 
 /* Polygon List */
-.polygon-list-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.polygon-list-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .list-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
@@ -183,6 +183,9 @@ body {
   flex: 1; position: relative; height: 100vh;
 }
 #map { width: 100%; height: 100%; z-index: 1; }
+
+/* Hide the default Leaflet.draw toolbar — we use our own FAB */
+.leaflet-draw.leaflet-control { display: none !important; }
 
 /* Polygon labels on map */
 .polygon-label {
@@ -369,21 +372,85 @@ body {
 .btn-export-all-geo:disabled { opacity: .5; cursor: wait; }
 
 /* ============================================================
-   DRAWN POLYGONS — Improved Card UI
+   DRAWN POLYGONS — Collapsible section, better placement
    ============================================================ */
-.drawn-polygons-section { border-bottom: 1px solid var(--divider); }
+.drawn-polygons-section {
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+/* Collapsible header */
+.drawn-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+.drawn-section-header:hover .field-label { color: var(--blue); }
+.drawn-toggle-icon {
+  font-size: 11px;
+  color: var(--text-faint);
+  transition: transform .2s;
+  flex-shrink: 0;
+}
+.drawn-section-collapsed .drawn-toggle-icon { transform: rotate(-90deg); }
+
+/* Draw FAB button inside header */
+.btn-draw-fab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1.5px solid var(--blue);
+  border-radius: 20px;
+  background: var(--blue-light);
+  color: var(--blue);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.btn-draw-fab:hover {
+  background: var(--blue);
+  color: #fff;
+}
+.btn-draw-fab.draw-active {
+  background: var(--edit-orange);
+  border-color: var(--edit-orange);
+  color: #fff;
+}
+
+.drawn-section-body {
+  margin-top: 8px;
+  overflow: hidden;
+  transition: max-height .25s ease;
+  max-height: 320px;
+}
+.drawn-section-collapsed .drawn-section-body {
+  max-height: 0;
+  margin-top: 0;
+}
 
 .drawn-polygon-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
+  gap: 5px;
+  max-height: 260px;
   overflow-y: auto;
-  margin: 0 -4px;
-  padding: 2px 4px;
+  padding-right: 2px;
 }
 
-.drawn-empty { font-size: 12px; color: var(--text-faint); padding: 6px 0; }
+.drawn-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 10px 0 4px;
+  text-align: center;
+}
 
 .drawn-polygon-item {
   display: flex;
@@ -391,14 +458,13 @@ body {
   gap: 4px;
   padding: 9px 11px;
   border-radius: var(--radius);
-  border: 1px solid rgba(41,128,185,.25);
+  border: 1px solid rgba(41,128,185,.22);
   border-left: 3px solid var(--blue);
   background: var(--blue-light);
   transition: background .12s, border-color .12s;
 }
 .drawn-polygon-item:hover { background: #d4eaf7; }
 
-/* Editing state — orange highlight */
 .drawn-polygon-item.dp-editing {
   border-left-color: var(--edit-orange);
   background: var(--edit-orange-light);
@@ -406,7 +472,6 @@ body {
 }
 .drawn-polygon-item.dp-editing:hover { background: #fde8c8; }
 
-/* Card header row */
 .dp-header {
   display: flex;
   align-items: center;
@@ -434,7 +499,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Note text */
 .dp-note-text {
   font-size: 12px;
   font-weight: 500;
@@ -444,13 +508,11 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Meta row */
 .dp-meta-row {
   font-size: 11px;
   color: var(--text-muted);
 }
 
-/* Action buttons row */
 .dp-actions {
   display: flex;
   gap: 4px;
@@ -485,7 +547,7 @@ body {
   background: var(--danger-light);
 }
 
-/* ---- Edit Mode Bar (inside sidebar) ---- */
+/* ---- Edit Mode Bar ---- */
 .edit-mode-bar {
   display: flex;
   align-items: center;
@@ -494,7 +556,7 @@ body {
   background: var(--edit-orange-light);
   border: 1px solid rgba(230,126,34,.35);
   border-radius: var(--radius);
-  margin-bottom: 8px;
+  margin-top: 8px;
   flex-wrap: wrap;
 }
 .edit-mode-label {
@@ -533,6 +595,48 @@ body {
   transition: all .12s;
 }
 .btn-edit-cancel:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Modify polygon bar inside verify panel */
+.modify-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fef5e7;
+  border: 1px solid rgba(230,126,34,.4);
+  border-radius: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.modify-bar-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e67e22;
+  min-width: 0;
+}
+.modify-bar-btns { display: flex; gap: 6px; }
+.btn-modify-save {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #e67e22;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-modify-save:hover { background: #ca6f1e; }
+.btn-modify-cancel {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #d6d2c4;
+  background: #fff;
+  color: #6d6b5e;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-modify-cancel:hover { border-color: #c0392b; color: #c0392b; }
 
 /* Blue drawn-polygon map labels */
 .drawn-label {
