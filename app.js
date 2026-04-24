@@ -38,6 +38,13 @@ L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
   attribution: 'Imagery &copy; Google',
 }).addTo(map);
 
+// Custom pane for drawn polygons — renders above tile but below labels
+map.createPane('drawnPane');
+map.getPane('drawnPane').style.zIndex = 420;
+map.createPane('drawnLabelPane');
+map.getPane('drawnLabelPane').style.zIndex = 450;
+map.createPane('drawnLabelPane').style.pointerEvents = 'none';
+
 // ---- DOM Refs ----
 const $ = (s) => document.querySelector(s);
 const districtSelect = $('#districtSelect');
@@ -133,7 +140,7 @@ function enableDrawControl() {
     draw: {
       polygon: {
         allowIntersection: false, showArea: true,
-        shapeOptions: { color: '#2980b9', weight: 2, dashArray: '6 4', fillColor: '#2980b9', fillOpacity: 0.2 },
+        shapeOptions: { color: '#2980b9', weight: 2, dashArray: '6 4', fillColor: '#2980b9', fillOpacity: 0.15 },
       },
       polyline: false, rectangle: false, circle: false, circlemarker: false, marker: false,
     },
@@ -272,6 +279,13 @@ function editNoteDrawnPolygon(polyId) {
 }
 
 // ---- Render Drawn Polygons on Map ----
+// Each polygon gets its own distinct color from a palette to reduce visual confusion
+const DRAWN_COLORS = ['#2980b9','#8e44ad','#16a085','#d35400','#c0392b','#27ae60','#2c3e50','#f39c12'];
+
+function getDrawnColor(index) {
+  return DRAWN_COLORS[index % DRAWN_COLORS.length];
+}
+
 function renderDrawnPolygonsOnMap() {
   if (!drawnLayer) return;
   drawnLayer.clearLayers();
@@ -279,31 +293,40 @@ function renderDrawnPolygonsOnMap() {
   drawnLayerMap = {};
 
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
-  districtPolys.forEach(entry => {
+  districtPolys.forEach((entry, index) => {
     const isEditing = editingDrawnId === entry.id;
+    const color = isEditing ? '#e67e22' : getDrawnColor(index);
+
     const layer = L.geoJSON(entry.geometry, {
+      pane: 'drawnPane',
       style: {
-        color: isEditing ? '#e67e22' : '#2980b9',
+        color: color,
         weight: isEditing ? 3 : 2,
         dashArray: isEditing ? null : '6 4',
-        fillColor: isEditing ? '#e67e22' : '#2980b9',
-        fillOpacity: isEditing ? 0.3 : 0.2,
+        // Low fillOpacity so stacked polygons don't fully cover each other
+        fillColor: color,
+        fillOpacity: isEditing ? 0.25 : 0.10,
+        opacity: 0.9,
       },
     });
     layer.on('click', () => zoomToDrawnPolygon(entry));
     drawnLayer.addLayer(layer);
     drawnLayerMap[entry.id] = layer;
 
+    // Label in matching color
     const centroid = getCentroid(entry.geometry);
     if (centroid) {
       const latlng = L.latLng(centroid[1], centroid[0]);
+      const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
       const marker = L.marker(latlng, {
+        pane: 'drawnLabelPane',
         icon: L.divIcon({
-          className: isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label',
-          html: `N${entry.id.replace('new_', '')}`,
-          iconSize: [26, 18], iconAnchor: [13, 9],
+          className: labelClass,
+          html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
+          iconSize: [28, 18], iconAnchor: [14, 9],
         }),
         interactive: true,
+        zIndexOffset: 1000 + index,
       }).addTo(map);
       marker.on('click', () => zoomToDrawnPolygon(entry));
       drawnLabelMarkers.push(marker);
@@ -338,17 +361,21 @@ function renderDrawnPolygonList() {
   }
   if (empty) empty.style.display = 'none';
 
-  districtPolys.forEach((entry) => {
+  districtPolys.forEach((entry, index) => {
     const displayId = `N${entry.id.replace('new_', '')}`;
     const isOwner = entry.user === currentUser;
     const isEditing = editingDrawnId === entry.id;
     const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : '';
+    const color = getDrawnColor(index);
 
     const div = document.createElement('div');
     div.className = `drawn-polygon-item${isEditing ? ' dp-editing' : ''}`;
+    // Use the polygon's unique color for its left border
+    div.style.borderLeftColor = color;
+    div.style.background = isEditing ? 'var(--edit-orange-light)' : `${color}14`;
     div.innerHTML = `
       <div class="dp-header">
-        <span class="dp-id-badge">${displayId}</span>
+        <span class="dp-id-badge" style="background:${color}">${displayId}</span>
         <span class="dp-area">${entry.area_ha} ha</span>
       </div>
       <div class="dp-note-text">${entry.note || 'No note'}</div>
