@@ -7,7 +7,7 @@
 //     Copy the URL that looks like:
 //     https://script.google.com/macros/s/AKfycb.../exec
 // ============================================================
-const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE'; // ← REPLACE THIS
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziOeiPoVANIADErUFBZGM3QqpKI-KSbVqEhqJRry1OJ9r-g-2yYDLjrUQKRADWxHAH/exec'; // ← REPLACE THIS
 
 // ---- District polygon counts ----
 const DISTRICT_COUNTS = {
