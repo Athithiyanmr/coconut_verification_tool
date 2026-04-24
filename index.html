@@ -74,7 +74,7 @@
       </div>
     </div>
 
-    <!-- Polygon List -->
+    <!-- Polygon List — takes all remaining space -->
     <div class="sidebar-section polygon-list-section" id="polygonListSection" style="display:none">
       <div class="list-toolbar">
         <label class="field-label">Polygons</label>
@@ -88,11 +88,20 @@
       <div class="polygon-list" id="polygonList"></div>
     </div>
 
-    <!-- New Polygons (user-drawn) -->
-    <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
-      <label class="field-label">New Polygons</label>
-      <div class="drawn-polygon-list" id="drawnPolygonList">
-        <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
+    <!-- New Polygons — collapsible panel pinned above footer -->
+    <div class="drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
+      <button class="drawn-toggle-btn" id="drawnToggleBtn" aria-expanded="false">
+        <span class="drawn-toggle-label">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+          New Polygons
+        </span>
+        <span class="drawn-count-badge" id="drawnCountBadge">0</span>
+        <svg class="drawn-chevron" id="drawnChevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+      <div class="drawn-body" id="drawnBody">
+        <div class="drawn-polygon-list" id="drawnPolygonList">
+          <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
+        </div>
       </div>
     </div>
 
@@ -154,7 +163,6 @@
         <button class="close-btn" id="closeGuide">&times;</button>
       </div>
       <div class="guide-scroll">
-        <!-- YES Section -->
         <div class="guide-section">
           <div class="guide-section-label guide-label-yes">YES — Coconut</div>
           <div class="guide-grid">
@@ -179,8 +187,6 @@
             Round palm crowns in regular grid &bull; Lighter green with gaps between trees &bull; Star/rosette frond pattern at high zoom
           </div>
         </div>
-
-        <!-- NO Section -->
         <div class="guide-section">
           <div class="guide-section-label guide-label-no">NO — Not Coconut</div>
           <div class="guide-grid">
@@ -216,16 +222,28 @@
   </div>
 
   <script src="app.js"></script>
-
-  <!-- Visual Guide Panel -->
   <script>
   (function() {
+    // Visual guide toggle
     var guideBtn = document.getElementById('guideToggle');
     var guidePanel = document.getElementById('guidePanel');
     var closeGuide = document.getElementById('closeGuide');
     if (guideBtn && guidePanel) {
       guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
       closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
+    }
+
+    // Drawn polygons collapsible toggle
+    var toggleBtn = document.getElementById('drawnToggleBtn');
+    var drawnBody = document.getElementById('drawnBody');
+    var chevron = document.getElementById('drawnChevron');
+    if (toggleBtn && drawnBody) {
+      toggleBtn.addEventListener('click', function() {
+        var expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        toggleBtn.setAttribute('aria-expanded', String(!expanded));
+        drawnBody.classList.toggle('drawn-body-open', !expanded);
+        chevron.style.transform = !expanded ? 'rotate(180deg)' : '';
+      });
     }
   })();
   </script>
