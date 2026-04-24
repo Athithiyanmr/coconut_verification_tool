@@ -1,15 +1,19 @@
 /* ==========================================================
    Coconut Polygon Verifier — Tamil Nadu 2020
-   Shared backend via Google Sheets (Apps Script Web App)
+   Worker assignment + polygon range filter + edit polygon shape
    ========================================================== */
 
 // ---- Cloud Config ----
 const GSHEET_API = 'https://script.google.com/macros/s/AKfycbw2Qgfv7U-gG39a4Z1uvrf_5ZFQnZnj6QMmgj4zmSNTsXobCHKpzRi_ClQBl_vJ0ZZV/exec';
 
+// ---- Worker Assignment State ----
+let workerAssignment = null; // { name, email, district, start, end }
+
 // ---- State ----
 let districtIndex = {};
 let currentDistrict = null;
 let geojsonData = null;
+let filteredFeatures = null; // only assigned polygon range
 let polygonLayer = null;
 let labelMarkers = [];
 let selectedPolygonId = null;
@@ -29,6 +33,11 @@ let drawnLabelMarkers = [];
 let drawnLayerMap = {};
 let editingDrawnId = null;
 let editingLeafletLayer = null;
+
+// Existing polygon editing state
+let editingExistingId = null;
+let editingExistingLayer = null;
+let editingExistingOrigGeom = null;
 
 // ---- Map Setup ----
 const map = L.map('map', { center: [10.8, 78.7], zoom: 7, zoomControl: true });
@@ -55,13 +64,12 @@ const polygonList = $('#polygonList');
 const verifyPanel = $('#verifyPanel');
 const loadingOverlay = $('#loadingOverlay');
 
-// ---- Badge + Panel helpers ----
+// ---- Badge helpers ----
 function updateDrawnBadge() {
   const badge = $('#drawnCountBadge');
   if (!badge) return;
   const count = drawnPolygons.filter(p => p.district === currentDistrict).length;
   badge.textContent = count;
-  // highlight badge if any polygons exist
   badge.style.background = count > 0 ? 'var(--blue)' : 'var(--text-faint)';
 }
 
@@ -189,26 +197,46 @@ map.on(L.Draw.Event.CREATED, (e) => {
   saveOneDrawnPolygon(entry);
   renderDrawnPolygonsOnMap();
   renderDrawnPolygonList();
-  // Auto-expand the panel so user immediately sees the new polygon
   expandDrawnPanel();
 });
 
+// ---- Overlap Detection (checks existing GeoJSON + other drawn polygons) ----
 function detectOverlaps(newFeature) {
-  if (!geojsonData || !window.turf) return [];
+  if (!window.turf) return [];
   const newPoly = newFeature.type === 'Feature' ? newFeature : turf.feature(newFeature.geometry || newFeature);
   const newBbox = turf.bbox(newPoly);
   const overlaps = [];
-  for (const feat of geojsonData.features) {
+
+  // Check against existing loaded GeoJSON polygons
+  if (geojsonData) {
+    for (const feat of geojsonData.features) {
+      try {
+        const featBbox = turf.bbox(feat);
+        if (newBbox[2] < featBbox[0] || newBbox[0] > featBbox[2] || newBbox[3] < featBbox[1] || newBbox[1] > featBbox[3]) continue;
+        const intersection = turf.intersect(newPoly, feat);
+        if (intersection) {
+          const interArea = turf.area(intersection);
+          if (interArea > 1) overlaps.push({ id: feat.properties.id, overlap_pct: (interArea / turf.area(newPoly) * 100).toFixed(1) });
+        }
+      } catch (err) { /* skip */ }
+    }
+  }
+
+  // Check against other drawn polygons in same district
+  const districtDrawn = drawnPolygons.filter(p => p.district === currentDistrict);
+  for (const dp of districtDrawn) {
     try {
-      const featBbox = turf.bbox(feat);
-      if (newBbox[2] < featBbox[0] || newBbox[0] > featBbox[2] || newBbox[3] < featBbox[1] || newBbox[1] > featBbox[3]) continue;
-      const intersection = turf.intersect(newPoly, feat);
+      const dpFeat = turf.feature(dp.geometry);
+      const dpBbox = turf.bbox(dpFeat);
+      if (newBbox[2] < dpBbox[0] || newBbox[0] > dpBbox[2] || newBbox[3] < dpBbox[1] || newBbox[1] > dpBbox[3]) continue;
+      const intersection = turf.intersect(newPoly, dpFeat);
       if (intersection) {
         const interArea = turf.area(intersection);
-        if (interArea > 1) overlaps.push({ id: feat.properties.id, overlap_pct: (interArea / turf.area(newPoly) * 100).toFixed(1) });
+        if (interArea > 1) overlaps.push({ id: dp.id, overlap_pct: (interArea / turf.area(newPoly) * 100).toFixed(1) });
       }
     } catch (err) { /* skip */ }
   }
+
   return overlaps;
 }
 
@@ -227,6 +255,99 @@ function calculateAreaHa(geometry) {
   }
   return parseFloat((Math.abs(area * R * R / 2) / 10000).toFixed(4));
 }
+
+// ---- Edit Existing Polygon Shape ----
+function startEditingExistingPolygon(id) {
+  if (!geojsonData) return;
+  const feat = geojsonData.features.find(f => f.properties.id === id);
+  if (!feat) return;
+
+  // Cancel any active drawn polygon editing
+  if (editingDrawnId) stopEditingDrawnPolygon(false);
+
+  editingExistingId = id;
+  editingExistingOrigGeom = JSON.parse(JSON.stringify(feat.geometry));
+
+  // Remove current polygon layer and replace with an editable one
+  if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
+  if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
+
+  // Rebuild all polygons except the one being edited
+  const otherFeatures = { type: 'FeatureCollection', features: geojsonData.features.filter(f => f.properties.id !== id) };
+  polygonLayer = L.geoJSON(otherFeatures, {
+    style: (feature) => getPolygonStyle(feature),
+    onEachFeature: (feature, layer) => { layer.on('click', () => selectPolygon(feature.properties.id)); }
+  }).addTo(map);
+
+  // Create editable layer for the selected polygon
+  editingExistingLayer = L.geoJSON(feat, {
+    style: { color: '#e67e22', weight: 3, fillColor: '#e67e22', fillOpacity: 0.2, dashArray: null },
+  }).addTo(map);
+
+  editingExistingLayer.eachLayer(l => {
+    if (l.editing) l.editing.enable();
+  });
+
+  map.fitBounds(editingExistingLayer.getBounds(), { padding: [80, 80], maxZoom: 18 });
+
+  // Show edit modal
+  $('#editPolyId').textContent = id;
+  $('#editPolyModal').classList.remove('hidden');
+}
+
+function stopEditingExistingPolygon(save) {
+  if (!editingExistingId || !editingExistingLayer) return;
+
+  if (save) {
+    // Extract updated geometry from the editable layer
+    let updatedGeom = null;
+    editingExistingLayer.eachLayer(l => {
+      if (l.editing) { l.editing.disable(); }
+      updatedGeom = l.toGeoJSON().geometry;
+    });
+
+    if (updatedGeom) {
+      // Update in geojsonData
+      const feat = geojsonData.features.find(f => f.properties.id === editingExistingId);
+      if (feat) {
+        feat.geometry = updatedGeom;
+        feat.properties.area_ha = calculateAreaHa(updatedGeom);
+        // Save to backend as a drawn polygon update
+        saveOneDrawnPolygon({
+          id: `edit_${editingExistingId}`,
+          district: currentDistrict,
+          geometry: updatedGeom,
+          area_ha: feat.properties.area_ha,
+          user: currentUser,
+          timestamp: new Date().toISOString(),
+          note: `Edited shape of polygon #${editingExistingId}`
+        });
+      }
+    }
+  } else {
+    // Restore original geometry
+    editingExistingLayer.eachLayer(l => { if (l.editing) l.editing.disable(); });
+    const feat = geojsonData.features.find(f => f.properties.id === editingExistingId);
+    if (feat && editingExistingOrigGeom) feat.geometry = editingExistingOrigGeom;
+  }
+
+  if (editingExistingLayer) { map.removeLayer(editingExistingLayer); editingExistingLayer = null; }
+  editingExistingId = null;
+  editingExistingOrigGeom = null;
+  $('#editPolyModal').classList.add('hidden');
+
+  // Rebuild full polygon layer
+  if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
+  const features = filteredFeatures || geojsonData;
+  polygonLayer = L.geoJSON(features, {
+    style: (feature) => getPolygonStyle(feature),
+    onEachFeature: (feature, layer) => { layer.on('click', () => selectPolygon(feature.properties.id)); }
+  }).addTo(map);
+  addLabels();
+}
+
+$('#btnSavePolyEdit').addEventListener('click', () => stopEditingExistingPolygon(true));
+$('#btnCancelPolyEdit').addEventListener('click', () => stopEditingExistingPolygon(false));
 
 // ---- Drawn Polygon Shape Editing ----
 function startEditingDrawnPolygon(polyId) {
@@ -301,50 +422,32 @@ function editNoteDrawnPolygon(polyId) {
 
 // ---- Render Drawn Polygons on Map ----
 const DRAWN_COLORS = ['#2980b9','#8e44ad','#16a085','#d35400','#c0392b','#27ae60','#2c3e50','#f39c12'];
-
-function getDrawnColor(index) {
-  return DRAWN_COLORS[index % DRAWN_COLORS.length];
-}
+function getDrawnColor(index) { return DRAWN_COLORS[index % DRAWN_COLORS.length]; }
 
 function renderDrawnPolygonsOnMap() {
   if (!drawnLayer) return;
   drawnLayer.clearLayers();
   clearDrawnLabels();
   drawnLayerMap = {};
-
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
   districtPolys.forEach((entry, index) => {
     const isEditing = editingDrawnId === entry.id;
     const color = isEditing ? '#e67e22' : getDrawnColor(index);
-
     const layer = L.geoJSON(entry.geometry, {
       pane: 'drawnPane',
-      style: {
-        color: color,
-        weight: isEditing ? 3 : 2,
-        dashArray: isEditing ? null : '6 4',
-        fillColor: color,
-        fillOpacity: isEditing ? 0.25 : 0.10,
-        opacity: 0.9,
-      },
+      style: { color, weight: isEditing ? 3 : 2, dashArray: isEditing ? null : '6 4', fillColor: color, fillOpacity: isEditing ? 0.25 : 0.10, opacity: 0.9 },
     });
     layer.on('click', () => zoomToDrawnPolygon(entry));
     drawnLayer.addLayer(layer);
     drawnLayerMap[entry.id] = layer;
-
     const centroid = getCentroid(entry.geometry);
     if (centroid) {
       const latlng = L.latLng(centroid[1], centroid[0]);
       const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
       const marker = L.marker(latlng, {
         pane: 'drawnLabelPane',
-        icon: L.divIcon({
-          className: labelClass,
-          html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
-          iconSize: [28, 18], iconAnchor: [14, 9],
-        }),
-        interactive: true,
-        zIndexOffset: 1000 + index,
+        icon: L.divIcon({ className: labelClass, html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`, iconSize: [28, 18], iconAnchor: [14, 9] }),
+        interactive: true, zIndexOffset: 1000 + index,
       }).addTo(map);
       marker.on('click', () => zoomToDrawnPolygon(entry));
       drawnLabelMarkers.push(marker);
@@ -357,7 +460,6 @@ function clearDrawnLabels() {
   drawnLabelMarkers = [];
 }
 
-// Re-render drawn labels on map move (mirrors addLabels behaviour)
 function addDrawnLabels() {
   clearDrawnLabels();
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
@@ -371,13 +473,8 @@ function addDrawnLabels() {
     const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
     const marker = L.marker(latlng, {
       pane: 'drawnLabelPane',
-      icon: L.divIcon({
-        className: labelClass,
-        html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
-        iconSize: [28, 18], iconAnchor: [14, 9],
-      }),
-      interactive: true,
-      zIndexOffset: 1000 + index,
+      icon: L.divIcon({ className: labelClass, html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`, iconSize: [28, 18], iconAnchor: [14, 9] }),
+      interactive: true, zIndexOffset: 1000 + index,
     }).addTo(map);
     marker.on('click', () => zoomToDrawnPolygon(entry));
     drawnLabelMarkers.push(marker);
@@ -394,27 +491,17 @@ function renderDrawnPolygonList() {
   const list = $('#drawnPolygonList');
   const empty = $('#drawnEmpty');
   if (!list) return;
-
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
-
-  // Always update the badge
   updateDrawnBadge();
-
   list.querySelectorAll('.drawn-polygon-item').forEach(el => el.remove());
-
-  if (districtPolys.length === 0) {
-    if (empty) empty.style.display = '';
-    return;
-  }
+  if (districtPolys.length === 0) { if (empty) empty.style.display = ''; return; }
   if (empty) empty.style.display = 'none';
-
   districtPolys.forEach((entry, index) => {
     const displayId = `N${entry.id.replace('new_', '')}`;
     const isOwner = entry.user === currentUser;
     const isEditing = editingDrawnId === entry.id;
     const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : '';
     const color = getDrawnColor(index);
-
     const div = document.createElement('div');
     div.className = `drawn-polygon-item${isEditing ? ' dp-editing' : ''}`;
     div.style.borderLeftColor = color;
@@ -429,23 +516,17 @@ function renderDrawnPolygonList() {
       <div class="dp-actions">
         <button class="dp-btn dp-btn-zoom" title="Zoom to polygon">🔍 Zoom</button>
         ${isOwner ? `
-          <button class="dp-btn dp-btn-edit ${isEditing ? 'dp-btn-active' : ''}" title="Edit shape by dragging vertices">
-            ✏️ ${isEditing ? 'Editing…' : 'Edit Shape'}
-          </button>
+          <button class="dp-btn dp-btn-edit ${isEditing ? 'dp-btn-active' : ''}" title="Edit shape by dragging vertices">✏️ ${isEditing ? 'Editing…' : 'Edit Shape'}</button>
           <button class="dp-btn dp-btn-note" title="Edit note">📝 Note</button>
           <button class="dp-btn dp-btn-delete" title="Delete polygon">🗑 Delete</button>
         ` : ''}
       </div>`;
-
     div.querySelector('.dp-btn-zoom').addEventListener('click', () => zoomToDrawnPolygon(entry));
     if (isOwner) {
-      div.querySelector('.dp-btn-edit').addEventListener('click', () => {
-        isEditing ? stopEditingDrawnPolygon(false) : startEditingDrawnPolygon(entry.id);
-      });
+      div.querySelector('.dp-btn-edit').addEventListener('click', () => { isEditing ? stopEditingDrawnPolygon(false) : startEditingDrawnPolygon(entry.id); });
       div.querySelector('.dp-btn-note').addEventListener('click', () => editNoteDrawnPolygon(entry.id));
       div.querySelector('.dp-btn-delete').addEventListener('click', () => deleteDrawnPolygon(entry.id));
     }
-
     list.appendChild(div);
   });
 }
@@ -459,43 +540,134 @@ function deleteDrawnPolygon(polyId) {
   renderDrawnPolygonList();
 }
 
-// ---- Init ----
-async function init() {
+// ---- Registration Modal with dual slider ----
+async function initRegistrationModal() {
   const res = await fetch('data/districts.json');
   districtIndex = await res.json();
   const names = Object.keys(districtIndex).sort();
+
+  // Populate main sidebar district select
   names.forEach(name => {
     const opt = document.createElement('option');
     opt.value = name;
     opt.textContent = `${name} (${districtIndex[name].count} polygons)`;
     districtSelect.appendChild(opt);
   });
+
+  // Populate modal district select
+  const modalSel = $('#modalDistrictSelect');
+  names.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = `${name} (${districtIndex[name].count} polygons)`;
+    modalSel.appendChild(opt);
+  });
+
+  // District selection in modal triggers slider
+  modalSel.addEventListener('change', () => {
+    const name = modalSel.value;
+    if (!name) { $('#rangeSection').style.display = 'none'; updateSubmitBtn(); return; }
+    const total = districtIndex[name].count;
+    setupDualSlider(1, total);
+    $('#rangeTotalLabel').textContent = `(${total.toLocaleString()} total)`;
+    $('#rangeSection').style.display = '';
+    updateSubmitBtn();
+  });
+
+  // Name/email inputs enable submit
+  $('#userName').addEventListener('input', updateSubmitBtn);
+  $('#userEmail').addEventListener('input', updateSubmitBtn);
+
+  // Submit
+  $('#userNameSubmit').addEventListener('click', () => {
+    const name = $('#userName').value.trim();
+    const email = $('#userEmail').value.trim();
+    const district = modalSel.value;
+    const start = parseInt($('#rangeFrom').value);
+    const end = parseInt($('#rangeTo').value);
+    if (!name || !email || !district) return;
+    workerAssignment = { name, email, district, start, end };
+    currentUser = name;
+    $('#userModal').classList.add('hidden');
+    if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = name;
+    showAssignmentBadge();
+    // Auto-select and lock district
+    districtSelect.value = district;
+    districtSelect.disabled = true;
+    loadDistrict(district);
+  });
+}
+
+function updateSubmitBtn() {
+  const name = $('#userName').value.trim();
+  const email = $('#userEmail').value.trim();
+  const district = $('#modalDistrictSelect').value;
+  $('#userNameSubmit').disabled = !(name && email && district);
+}
+
+function showAssignmentBadge() {
+  if (!workerAssignment) return;
+  const badge = $('#assignmentBadge');
+  badge.textContent = `📍 ${workerAssignment.district} · Polygons ${workerAssignment.start}–${workerAssignment.end}`;
+  badge.classList.remove('hidden');
+}
+
+// ---- Dual Range Slider ----
+function setupDualSlider(min, max) {
+  const sliderMin = $('#sliderMin');
+  const sliderMax = $('#sliderMax');
+  const fromInput = $('#rangeFrom');
+  const toInput = $('#rangeTo');
+
+  sliderMin.min = min; sliderMin.max = max; sliderMin.value = min;
+  sliderMax.min = min; sliderMax.max = max; sliderMax.value = max;
+  fromInput.min = min; fromInput.max = max; fromInput.value = min;
+  toInput.min = min; toInput.max = max; toInput.value = max;
+
+  function updateTrack() {
+    const lo = parseInt(sliderMin.value);
+    const hi = parseInt(sliderMax.value);
+    const pctLo = ((lo - min) / (max - min)) * 100;
+    const pctHi = ((hi - min) / (max - min)) * 100;
+    $('#sliderTrack').style.left = pctLo + '%';
+    $('#sliderTrack').style.width = (pctHi - pctLo) + '%';
+    fromInput.value = lo;
+    toInput.value = hi;
+    $('#rangeInfo').textContent = `Polygons ${lo.toLocaleString()} – ${hi.toLocaleString()} selected (${(hi - lo + 1).toLocaleString()} total)`;
+  }
+
+  sliderMin.addEventListener('input', () => {
+    if (parseInt(sliderMin.value) > parseInt(sliderMax.value)) sliderMin.value = sliderMax.value;
+    updateTrack();
+  });
+  sliderMax.addEventListener('input', () => {
+    if (parseInt(sliderMax.value) < parseInt(sliderMin.value)) sliderMax.value = sliderMin.value;
+    updateTrack();
+  });
+  fromInput.addEventListener('change', () => {
+    let v = Math.max(min, Math.min(parseInt(fromInput.value) || min, parseInt(sliderMax.value)));
+    sliderMin.value = v; fromInput.value = v; updateTrack();
+  });
+  toInput.addEventListener('change', () => {
+    let v = Math.min(max, Math.max(parseInt(toInput.value) || max, parseInt(sliderMin.value)));
+    sliderMax.value = v; toInput.value = v; updateTrack();
+  });
+
+  updateTrack();
+}
+
+// ---- Init ----
+async function init() {
   try {
     const bRes = await fetch('data/district_boundaries.geojson');
     districtBoundaries = await bRes.json();
   } catch (e) { console.warn('Could not load district boundaries'); }
   setupDrawLayer();
   await loadFromCloud();
-  promptUserName();
-}
-
-function promptUserName() {
+  await initRegistrationModal();
+  // Show modal
   const modal = $('#userModal');
   if (modal) modal.classList.remove('hidden');
-  const input = $('#userName');
-  const btn = $('#userNameSubmit');
-  if (input && btn) {
-    const submit = () => {
-      const name = input.value.trim();
-      if (!name) { input.focus(); return; }
-      currentUser = name;
-      modal.classList.add('hidden');
-      if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = name;
-    };
-    btn.addEventListener('click', submit);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-    input.focus();
-  }
 }
 
 // ---- District Selection ----
@@ -514,12 +686,27 @@ async function loadDistrict(name) {
   verifyPanel.classList.add('hidden');
   loadingOverlay.classList.remove('hidden');
   districtInfo.classList.remove('hidden');
-  districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+
   const res = await fetch(info.file);
   geojsonData = await res.json();
+
+  // Filter to assigned range if worker has assignment for this district
+  if (workerAssignment && workerAssignment.district === name) {
+    const start = workerAssignment.start;
+    const end = workerAssignment.end;
+    filteredFeatures = {
+      type: 'FeatureCollection',
+      features: geojsonData.features.filter(f => f.properties.id >= start && f.properties.id <= end)
+    };
+    districtInfo.innerHTML = `<b>${name}</b> — Your range: <b>#${start}–#${end}</b> (${filteredFeatures.features.length} polygons)`;
+  } else {
+    filteredFeatures = geojsonData;
+    districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+  }
+
   clearMap();
   showDistrictBoundary(name);
-  polygonLayer = L.geoJSON(geojsonData, {
+  polygonLayer = L.geoJSON(filteredFeatures, {
     style: (feature) => getPolygonStyle(feature),
     onEachFeature: (feature, layer) => { layer.on('click', () => selectPolygon(feature.properties.id)); }
   }).addTo(map);
@@ -551,6 +738,7 @@ function clearMap() {
   if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
   if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
   if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
+  if (editingExistingLayer) { map.removeLayer(editingExistingLayer); editingExistingLayer = null; editingExistingId = null; }
   clearLabels();
   clearDrawnLabels();
   if (drawnLayer) drawnLayer.clearLayers();
@@ -568,24 +756,22 @@ function showDistrictBoundary(districtName) {
   boundaryLayer.bringToBack();
 }
 
-function clearLabels() {
-  labelMarkers.forEach(m => map.removeLayer(m));
-  labelMarkers = [];
-}
+function clearLabels() { labelMarkers.forEach(m => map.removeLayer(m)); labelMarkers = []; }
 
 function addLabels() {
   clearLabels();
-  if (!geojsonData) return;
+  const features = (filteredFeatures || geojsonData);
+  if (!features) return;
   const zoom = map.getZoom();
   const bounds = map.getBounds();
-  geojsonData.features.forEach(feat => {
+  features.features.forEach(feat => {
     const id = feat.properties.id;
     const coords = getCentroid(feat.geometry);
     if (!coords) return;
     const latlng = L.latLng(coords[1], coords[0]);
     if (!bounds.contains(latlng)) return;
-    if (zoom < 10 && geojsonData.features.length > 50) return;
-    if (zoom < 12 && geojsonData.features.length > 200) return;
+    if (zoom < 10 && features.features.length > 50) return;
+    if (zoom < 12 && features.features.length > 200) return;
     const key = `${currentDistrict}:${id}`;
     const status = getStatus(key);
     let className = 'polygon-label';
@@ -617,8 +803,10 @@ function getCentroid(geometry) {
 
 // ---- Polygon Selection ----
 function selectPolygon(id) {
+  if (editingExistingId) return; // block selection while editing
   selectedPolygonId = id;
-  const feat = geojsonData.features.find(f => f.properties.id === id);
+  const features = filteredFeatures || geojsonData;
+  const feat = features.features.find(f => f.properties.id === id);
   if (!feat) return;
   if (highlightLayer) map.removeLayer(highlightLayer);
   highlightLayer = L.geoJSON(feat, {
@@ -673,26 +861,13 @@ function updateOverlayVisibility(show) {
 $('#btnYes').addEventListener('click', () => verifyPolygon('yes'));
 $('#btnNo').addEventListener('click', () => verifyPolygon('no'));
 $('#btnSkip').addEventListener('click', () => navigatePolygon(1));
-$('#btnModify').addEventListener('click', () => modifyVerification());
 
-function modifyVerification() {
-  if (!selectedPolygonId || !currentDistrict) return;
-  const key = `${currentDistrict}:${selectedPolygonId}`;
-  const existing = verificationResults[key];
-  if (!existing) { alert('This polygon has no verification to modify yet.'); return; }
-  const prevUser = typeof existing === 'object' ? existing.user : 'unknown';
-  const prevStatus = getStatus(key);
-  if (!confirm(`Marked "${prevStatus === 'yes' ? 'Coconut' : 'Not Coconut'}" by ${prevUser}.\n\nClear so you can re-mark it?`)) return;
-  delete verificationResults[key];
-  saveOneVerification(key, 'pending', currentUser, new Date().toISOString());
-  polygonLayer.setStyle((feat) => getPolygonStyle(feat));
-  updateProgress();
-  renderPolygonList();
-  addLabels();
-  updateVerifyButtonStates(null);
-  const verifiedByEl = $('#verifiedBy');
-  if (verifiedByEl) verifiedByEl.classList.add('hidden');
-}
+// Modify button now edits the polygon shape
+$('#btnModify').addEventListener('click', () => {
+  if (!selectedPolygonId) return;
+  startEditingExistingPolygon(selectedPolygonId);
+  verifyPanel.classList.add('hidden');
+});
 
 $('#closeVerify').addEventListener('click', () => {
   verifyPanel.classList.add('hidden');
@@ -705,7 +880,7 @@ $('#btnNext').addEventListener('click', () => navigatePolygon(1));
 
 function verifyPolygon(status) {
   if (!selectedPolygonId || !currentDistrict) return;
-  if (!currentUser) { promptUserName(); return; }
+  if (!currentUser) { return; }
   const key = `${currentDistrict}:${selectedPolygonId}`;
   verificationResults[key] = { status, user: currentUser, timestamp: new Date().toISOString() };
   saveOneVerification(key, status, currentUser, new Date().toISOString());
@@ -720,7 +895,6 @@ function verifyPolygon(status) {
 }
 
 function navigatePolygon(direction) {
-  if (!geojsonData) return;
   const features = getFilteredFeatures();
   if (features.length === 0) return;
   let currentIdx = features.findIndex(f => f.properties.id === selectedPolygonId);
@@ -731,8 +905,9 @@ function navigatePolygon(direction) {
 }
 
 function getFilteredFeatures() {
-  if (!geojsonData) return [];
-  return geojsonData.features.filter(f => {
+  const source = filteredFeatures || geojsonData;
+  if (!source) return [];
+  return source.features.filter(f => {
     if (currentFilter === 'all') return true;
     const key = `${currentDistrict}:${f.properties.id}`;
     const status = getStatus(key) || 'pending';
@@ -742,7 +917,8 @@ function getFilteredFeatures() {
 
 // ---- Polygon List ----
 function renderPolygonList() {
-  if (!geojsonData) return;
+  const source = filteredFeatures || geojsonData;
+  if (!source) return;
   const features = getFilteredFeatures();
   polygonList.innerHTML = features.map(f => {
     const id = f.properties.id;
@@ -781,7 +957,7 @@ if (refreshBtn) {
   refreshBtn.addEventListener('click', async () => {
     refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing...';
     await loadFromCloud();
-    if (currentDistrict && geojsonData) {
+    if (currentDistrict && (filteredFeatures || geojsonData)) {
       polygonLayer.setStyle((feat) => getPolygonStyle(feat));
       renderPolygonList(); updateProgress(); addLabels();
       renderDrawnPolygonsOnMap(); renderDrawnPolygonList();
@@ -792,10 +968,11 @@ if (refreshBtn) {
 
 // ---- Progress ----
 function updateProgress() {
-  if (!geojsonData || !currentDistrict) return;
-  const total = geojsonData.features.length;
+  const source = filteredFeatures || geojsonData;
+  if (!source || !currentDistrict) return;
+  const total = source.features.length;
   let yes = 0, no = 0;
-  geojsonData.features.forEach(f => {
+  source.features.forEach(f => {
     const st = getStatus(`${currentDistrict}:${f.properties.id}`);
     if (st === 'yes') yes++; if (st === 'no') no++;
   });
@@ -809,9 +986,10 @@ function updateProgress() {
 
 // ---- Export CSV ----
 $('#exportBtn').addEventListener('click', () => {
-  if (!geojsonData || !currentDistrict) return;
+  const source = filteredFeatures || geojsonData;
+  if (!source || !currentDistrict) return;
   let csv = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n';
-  geojsonData.features.forEach(f => {
+  source.features.forEach(f => {
     const id = f.properties.id, key = `${currentDistrict}:${id}`;
     const status = getStatus(key) || 'pending', verifier = getVerifier(key);
     const entry = verificationResults[key], ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
@@ -827,8 +1005,9 @@ $('#exportBtn').addEventListener('click', () => {
 
 // ---- Export GeoJSON ----
 $('#exportJsonBtn').addEventListener('click', () => {
-  if (!geojsonData || !currentDistrict) return;
-  const output = JSON.parse(JSON.stringify(geojsonData));
+  const source = filteredFeatures || geojsonData;
+  if (!source || !currentDistrict) return;
+  const output = JSON.parse(JSON.stringify(source));
   output.features.forEach(f => {
     const key = `${currentDistrict}:${f.properties.id}`;
     f.properties.verification = getStatus(key) || 'pending';
@@ -911,19 +1090,19 @@ async function exportAllDistricts(format) {
 // ---- Keyboard Shortcuts ----
 document.addEventListener('keydown', (e) => {
   if ($('#userModal') && !$('#userModal').classList.contains('hidden')) return;
+  if (editingExistingId) {
+    if (e.key === 'Enter') { e.preventDefault(); stopEditingExistingPolygon(true); }
+    if (e.key === 'Escape') { e.preventDefault(); stopEditingExistingPolygon(false); }
+    return;
+  }
   if (!verifyPanel.classList.contains('hidden')) {
     if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); verifyPolygon('yes'); }
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); verifyPolygon('no'); }
-    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); modifyVerification(); }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); if (selectedPolygonId) { startEditingExistingPolygon(selectedPolygonId); verifyPanel.classList.add('hidden'); } }
     if (e.key === 's' || e.key === 'S' || e.key === ' ') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePolygon(-1); }
-    if (e.key === 't' || e.key === 'T') {
-      e.preventDefault();
-      const toggle = $('#overlayToggle');
-      toggle.checked = !toggle.checked;
-      updateOverlayVisibility(toggle.checked);
-    }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); const toggle = $('#overlayToggle'); toggle.checked = !toggle.checked; updateOverlayVisibility(toggle.checked); }
     if (e.key === 'Escape') { verifyPanel.classList.add('hidden'); selectedPolygonId = null; if (highlightLayer) map.removeLayer(highlightLayer); }
   }
 });
@@ -932,7 +1111,7 @@ document.addEventListener('keydown', (e) => {
 setInterval(async () => {
   if (!isSaving) {
     await loadFromCloud();
-    if (currentDistrict && geojsonData) {
+    if (currentDistrict && (filteredFeatures || geojsonData)) {
       polygonLayer.setStyle((feat) => getPolygonStyle(feat));
       updateProgress();
       renderDrawnPolygonsOnMap();

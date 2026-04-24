@@ -14,13 +14,69 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- User Name Modal -->
+
+  <!-- ===================== REGISTRATION MODAL ===================== -->
   <div class="modal-overlay" id="userModal">
-    <div class="modal-card">
-      <h2 class="modal-title">Welcome to Coconut Verifier</h2>
-      <p class="modal-desc">Enter your name so others know who verified each polygon.</p>
-      <input type="text" id="userName" class="modal-input" placeholder="Your name (e.g., Athithiyan)" autocomplete="off" />
-      <button class="btn btn-primary modal-btn" id="userNameSubmit">Start Verifying</button>
+    <div class="modal-card" style="width:440px;text-align:left;">
+      <h2 class="modal-title" style="text-align:center">🌴 Coconut Verifier</h2>
+      <p class="modal-desc" style="text-align:center">Enter your details to start verifying polygons.</p>
+
+      <!-- Register banner -->
+      <div class="register-banner">
+        <span>New volunteer?</span>
+        <a href="YOUR_GOOGLE_FORM_LINK_HERE" target="_blank" rel="noopener noreferrer" class="register-link">Register via Google Form →</a>
+      </div>
+
+      <label class="field-label" style="margin-top:12px">Your Name</label>
+      <input type="text" id="userName" class="modal-input" placeholder="e.g. Athithiyan" autocomplete="off" />
+
+      <label class="field-label" style="margin-top:4px">Your Email</label>
+      <input type="email" id="userEmail" class="modal-input" placeholder="e.g. athi@email.com" autocomplete="off" />
+
+      <label class="field-label" style="margin-top:4px">District</label>
+      <select id="modalDistrictSelect" class="select-input" style="margin-bottom:14px">
+        <option value="">— Choose your assigned district —</option>
+      </select>
+
+      <!-- Polygon range slider — shown after district chosen -->
+      <div id="rangeSection" style="display:none">
+        <label class="field-label">Polygon Range <span id="rangeTotalLabel" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+        <div class="range-row">
+          <div class="range-col">
+            <span class="range-sub">From</span>
+            <input type="number" id="rangeFrom" class="range-num-input" min="1" value="1" />
+          </div>
+          <div class="range-slider-wrap">
+            <div class="dual-slider" id="dualSlider">
+              <div class="slider-track" id="sliderTrack"></div>
+              <input type="range" id="sliderMin" class="range-thumb range-thumb-min" min="1" max="100" value="1" step="1" />
+              <input type="range" id="sliderMax" class="range-thumb range-thumb-max" min="1" max="100" value="100" step="1" />
+            </div>
+          </div>
+          <div class="range-col">
+            <span class="range-sub">To</span>
+            <input type="number" id="rangeTo" class="range-num-input" min="1" value="100" />
+          </div>
+        </div>
+        <div class="range-info" id="rangeInfo">Polygons 1 – 100 selected (100 total)</div>
+      </div>
+
+      <button class="btn btn-primary modal-btn" id="userNameSubmit" style="margin-top:14px" disabled>Start Verifying</button>
+    </div>
+  </div>
+
+  <!-- ===================== EDIT POLYGON MODAL ===================== -->
+  <div class="modal-overlay hidden" id="editPolyModal">
+    <div class="modal-card" style="width:400px;text-align:left">
+      <h2 class="modal-title" style="text-align:center">✏️ Edit Polygon Shape</h2>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;text-align:center">Drag vertices on the map to reshape this polygon, then save.</p>
+      <div style="background:var(--warning-light);border:1px solid #e0b97a;border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warning);margin-bottom:16px">
+        <b>Polygon #<span id="editPolyId"></span></b> is now editable on the map.<br/>Drag any vertex to reshape it.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="btnSavePolyEdit" style="flex:1">💾 Save Shape</button>
+        <button class="btn btn-outline" id="btnCancelPolyEdit" style="flex:1">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -46,12 +102,13 @@
           <span class="sync-text">Connecting...</span>
         </div>
       </div>
+      <div id="assignmentBadge" class="assignment-badge hidden"></div>
     </div>
 
-    <!-- District Selector -->
+    <!-- District Selector (locked after login) -->
     <div class="sidebar-section">
       <div class="field-row">
-        <label class="field-label" for="districtSelect">Select District</label>
+        <label class="field-label" for="districtSelect">District</label>
         <button class="btn btn-sm refresh-btn" id="refreshBtn" title="Refresh from cloud">Refresh</button>
       </div>
       <select id="districtSelect" class="select-input">
@@ -74,7 +131,7 @@
       </div>
     </div>
 
-    <!-- Polygon List — takes all remaining space -->
+    <!-- Polygon List -->
     <div class="sidebar-section polygon-list-section" id="polygonListSection" style="display:none">
       <div class="list-toolbar">
         <label class="field-label">Polygons</label>
@@ -88,7 +145,7 @@
       <div class="polygon-list" id="polygonList"></div>
     </div>
 
-    <!-- New Polygons — collapsible panel pinned above footer -->
+    <!-- New Polygons -->
     <div class="drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
       <button class="drawn-toggle-btn" id="drawnToggleBtn" aria-expanded="false">
         <span class="drawn-toggle-label">
@@ -126,7 +183,7 @@
         <span class="verify-area" id="verifyArea"></span>
         <button class="close-btn" id="closeVerify">&times;</button>
       </div>
-      <p class="verify-hint">Toggle the overlay to see the satellite image beneath. Is this a coconut area?</p>
+      <p class="verify-hint">Toggle overlay to compare satellite vs polygon. Is this coconut?</p>
       <p class="verified-by hidden" id="verifiedBy"></p>
       <div class="verify-toggle-row">
         <label class="toggle-label">
@@ -140,7 +197,7 @@
         <button class="btn btn-no" id="btnNo" title="N">No — Not Coconut</button>
       </div>
       <div class="verify-actions verify-actions-secondary">
-        <button class="btn btn-modify" id="btnModify" title="M">Modify</button>
+        <button class="btn btn-modify" id="btnModify" title="M">✏️ Edit Polygon</button>
         <button class="btn btn-skip" id="btnSkip" title="Space">Skip</button>
       </div>
       <div class="verify-nav">
@@ -166,50 +223,22 @@
         <div class="guide-section">
           <div class="guide-section-label guide-label-yes">YES — Coconut</div>
           <div class="guide-grid">
-            <div class="guide-card guide-card-yes">
-              <img src="docs/yes_1_namakkal.png" alt="Namakkal coconut plantation" loading="lazy" />
-              <span class="guide-cap">Namakkal — Dense plantation, regular grid spacing</span>
-            </div>
-            <div class="guide-card guide-card-yes">
-              <img src="docs/yes_2_cuddalore.png" alt="Cuddalore coconut plantation" loading="lazy" />
-              <span class="guide-cap">Cuddalore — Coconut adjacent to cropland</span>
-            </div>
-            <div class="guide-card guide-card-yes">
-              <img src="docs/yes_3_ariyalur.png" alt="Ariyalur coconut plantation" loading="lazy" />
-              <span class="guide-cap">Ariyalur — Mature palms, star-shaped fronds</span>
-            </div>
-            <div class="guide-card guide-card-yes">
-              <img src="docs/yes_4_chennai.png" alt="Chennai coconut palms" loading="lazy" />
-              <span class="guide-cap">Chennai — High zoom, individual fronds visible</span>
-            </div>
+            <div class="guide-card guide-card-yes"><img src="docs/yes_1_namakkal.png" alt="Namakkal coconut plantation" loading="lazy" /><span class="guide-cap">Namakkal — Dense plantation, regular grid spacing</span></div>
+            <div class="guide-card guide-card-yes"><img src="docs/yes_2_cuddalore.png" alt="Cuddalore coconut plantation" loading="lazy" /><span class="guide-cap">Cuddalore — Coconut adjacent to cropland</span></div>
+            <div class="guide-card guide-card-yes"><img src="docs/yes_3_ariyalur.png" alt="Ariyalur coconut plantation" loading="lazy" /><span class="guide-cap">Ariyalur — Mature palms, star-shaped fronds</span></div>
+            <div class="guide-card guide-card-yes"><img src="docs/yes_4_chennai.png" alt="Chennai coconut palms" loading="lazy" /><span class="guide-cap">Chennai — High zoom, individual fronds visible</span></div>
           </div>
-          <div class="guide-tip guide-tip-yes">
-            Round palm crowns in regular grid &bull; Lighter green with gaps between trees &bull; Star/rosette frond pattern at high zoom
-          </div>
+          <div class="guide-tip guide-tip-yes">Round palm crowns in regular grid &bull; Lighter green with gaps between trees &bull; Star/rosette frond pattern at high zoom</div>
         </div>
         <div class="guide-section">
           <div class="guide-section-label guide-label-no">NO — Not Coconut</div>
           <div class="guide-grid">
-            <div class="guide-card guide-card-no">
-              <img src="docs/no_1_ariyalur.png" alt="Scattered trees, not coconut" loading="lazy" />
-              <span class="guide-cap">Ariyalur — Scattered neem/tamarind, no pattern</span>
-            </div>
-            <div class="guide-card guide-card-no">
-              <img src="docs/no_2_chennai.png" alt="Urban tree cover" loading="lazy" />
-              <span class="guide-cap">Chennai — Urban tree cover near housing</span>
-            </div>
-            <div class="guide-card guide-card-no">
-              <img src="docs/no_3_ariyalur.png" alt="Cropland" loading="lazy" />
-              <span class="guide-cap">Ariyalur — Cropland, harvested fields</span>
-            </div>
-            <div class="guide-card guide-card-no">
-              <img src="docs/no_4_villupuram.png" alt="Barren land" loading="lazy" />
-              <span class="guide-cap">Villupuram — Barren / fallow agricultural land</span>
-            </div>
+            <div class="guide-card guide-card-no"><img src="docs/no_1_ariyalur.png" alt="Scattered trees" loading="lazy" /><span class="guide-cap">Ariyalur — Scattered neem/tamarind, no pattern</span></div>
+            <div class="guide-card guide-card-no"><img src="docs/no_2_chennai.png" alt="Urban tree cover" loading="lazy" /><span class="guide-cap">Chennai — Urban tree cover near housing</span></div>
+            <div class="guide-card guide-card-no"><img src="docs/no_3_ariyalur.png" alt="Cropland" loading="lazy" /><span class="guide-cap">Ariyalur — Cropland, harvested fields</span></div>
+            <div class="guide-card guide-card-no"><img src="docs/no_4_villupuram.png" alt="Barren land" loading="lazy" /><span class="guide-cap">Villupuram — Barren / fallow agricultural land</span></div>
           </div>
-          <div class="guide-tip guide-tip-no">
-            Irregular canopy, no spacing &bull; Mixed tree species &bull; Cropland or barren fields &bull; Urban buildings/roads visible
-          </div>
+          <div class="guide-tip guide-tip-no">Irregular canopy, no spacing &bull; Mixed tree species &bull; Cropland or barren fields &bull; Urban buildings/roads visible</div>
         </div>
       </div>
     </div>
@@ -224,7 +253,6 @@
   <script src="app.js"></script>
   <script>
   (function() {
-    // Visual guide toggle
     var guideBtn = document.getElementById('guideToggle');
     var guidePanel = document.getElementById('guidePanel');
     var closeGuide = document.getElementById('closeGuide');
@@ -232,8 +260,6 @@
       guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
       closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
     }
-
-    // Drawn polygons collapsible toggle
     var toggleBtn = document.getElementById('drawnToggleBtn');
     var drawnBody = document.getElementById('drawnBody');
     var chevron = document.getElementById('drawnChevron');
