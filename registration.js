@@ -1,12 +1,15 @@
 // ============================================================
 // registration.js  — Worker Login / Registration / Admin
-// Include in index.html BEFORE app.js:
-//   <script src="registration.js"></script>
 // ============================================================
-// Set your deployed Apps Script URL here:
-const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+// ⚠️  STEP 1: Paste your Apps Script Web App URL below.
+//     Go to Extensions → Apps Script → Deploy → New Deployment
+//     Execute as: Me   |   Access: Anyone
+//     Copy the URL that looks like:
+//     https://script.google.com/macros/s/AKfycb.../exec
+// ============================================================
+const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE'; // ← REPLACE THIS
 
-// ---- District polygon counts (from districts.json) ----
+// ---- District polygon counts ----
 const DISTRICT_COUNTS = {
   "Ariyalur":35,"Chengalpattu":668,"Chennai":4,"Coimbatore":9235,
   "Cuddalore":444,"Dharmapuri":1982,"Dindigul":6077,"Erode":7364,
@@ -32,6 +35,18 @@ const ADMIN_PWD_LOCAL = 'coconut2024admin'; // Must match Apps Script ADMIN_PASS
 // INIT
 // ============================================================
 function initRegistration() {
+  // Check if URL is still placeholder — show setup warning
+  if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    const modal = document.getElementById('userModal');
+    if (modal) {
+      const warn = document.createElement('div');
+      warn.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;font-size:13px;color:#856404;margin-bottom:12px;text-align:left';
+      warn.innerHTML = '<b>⚠️ Setup Required</b><br>The Apps Script URL is not set yet. Please follow the <a href="https://github.com/Athithiyanmr/coconut_verification_tool#setup" target="_blank">setup instructions</a> in the README, then paste your URL into <code>registration.js</code>.';
+      const card = modal.querySelector('.modal-card');
+      if (card) card.insertBefore(warn, card.firstChild);
+    }
+  }
+
   const districts = Object.keys(DISTRICT_COUNTS).sort();
 
   // Register district dropdown
@@ -74,12 +89,17 @@ window.switchTab = function(tab) {
 // MODAL EVENTS
 // ============================================================
 function setupModalEvents() {
-  // Sign-in
   const btnSignIn = document.getElementById('btnSignIn');
   if (btnSignIn) {
     btnSignIn.addEventListener('click', async () => {
       const email = document.getElementById('loginEmail').value.trim();
       if (!email) { showError('loginError', 'Please enter your email.'); return; }
+
+      if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        showError('loginError', '⚠️ Apps Script URL not configured yet. See setup instructions above.');
+        return;
+      }
+
       btnSignIn.textContent = 'Looking up...';
       btnSignIn.disabled = true;
       hideError('loginError');
@@ -93,7 +113,7 @@ function setupModalEvents() {
           btnSignIn.disabled = false;
         }
       } catch(e) {
-        showError('loginError', 'Connection error. Check your internet or Apps Script URL.');
+        showError('loginError', 'Connection error. Check Apps Script URL and deployment.');
         btnSignIn.textContent = 'Sign In →';
         btnSignIn.disabled = false;
       }
@@ -121,7 +141,6 @@ function setupModalEvents() {
 
   btnStep1 && btnStep1.addEventListener('click', goRegStep2);
 
-  // Register submit
   const btnReg = document.getElementById('btnRegSubmit');
   btnReg && btnReg.addEventListener('click', submitRegistration);
 }
@@ -141,8 +160,12 @@ async function goRegStep2() {
   document.getElementById('regTotalLabel').textContent = `(total: ${total.toLocaleString()} polygons)`;
 
   try {
-    const res = await apiFetch(`${APPS_SCRIPT_URL}?action=getTakenRanges&district=${encodeURIComponent(district)}`);
-    takenRanges = res.ranges || [];
+    if (APPS_SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
+      const res = await apiFetch(`${APPS_SCRIPT_URL}?action=getTakenRanges&district=${encodeURIComponent(district)}`);
+      takenRanges = res.ranges || [];
+    } else {
+      takenRanges = [];
+    }
   } catch(e) { takenRanges = []; }
 
   setupRangeSlider('reg', total, takenRanges);
@@ -248,6 +271,11 @@ async function submitRegistration() {
     return;
   }
 
+  if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    showError('regSubmitError', '⚠️ Apps Script URL not configured. Contact the admin.');
+    return;
+  }
+
   const btn = document.getElementById('btnRegSubmit');
   if (btn) { btn.textContent = 'Registering...'; btn.disabled = true; }
   hideError('regSubmitError');
@@ -264,7 +292,7 @@ async function submitRegistration() {
       if (btn) { btn.textContent = 'Register & Start →'; btn.disabled = false; }
     }
   } catch(e) {
-    showError('regSubmitError', 'Connection error. Try again.');
+    showError('regSubmitError', 'Connection error. Check Apps Script deployment.');
     if (btn) { btn.textContent = 'Register & Start →'; btn.disabled = false; }
   }
 }
@@ -281,10 +309,8 @@ function applySession(data) {
   window.SESSION.assignedEnd   = parseInt(data.assigned_end)   || 9999;
   window.SESSION.active        = true;
 
-  // Update currentUser in app.js
   if (typeof currentUser !== 'undefined') currentUser = window.SESSION.name || window.SESSION.email;
 
-  // Update sidebar display
   const display = document.getElementById('currentUserDisplay');
   if (display) display.textContent = window.SESSION.name;
 
@@ -294,7 +320,6 @@ function applySession(data) {
     badge.classList.remove('hidden');
   }
 
-  // Show admin button if admin role
   if (window.SESSION.role === 'admin') {
     const adminBtn = document.getElementById('adminOpenBtn');
     if (adminBtn) adminBtn.style.display = '';
@@ -302,11 +327,9 @@ function applySession(data) {
     if (badge2) { badge2.textContent = '🔒 Admin'; badge2.classList.remove('hidden'); }
   }
 
-  // Close modal
   const modal = document.getElementById('userModal');
   if (modal) modal.classList.add('hidden');
 
-  // Auto-load assigned district and lock for workers
   const districtSelect = document.getElementById('districtSelect');
   if (districtSelect && window.SESSION.district && window.SESSION.role !== 'admin') {
     districtSelect.value = window.SESSION.district;
@@ -316,16 +339,13 @@ function applySession(data) {
 }
 
 // ============================================================
-// POLYGON RANGE FILTER
-// Called from app.js after loading GeoJSON features
-// Usage: const filtered = window.getAssignedFeatures(allFeatures);
+// POLYGON RANGE FILTER — called from app.js
 // ============================================================
 window.getAssignedFeatures = function(allFeatures) {
   if (!window.SESSION.active) return allFeatures;
   if (window.SESSION.role === 'admin') return allFeatures;
   const start = window.SESSION.assignedStart;
   const end   = window.SESSION.assignedEnd;
-  // Polygons are 1-indexed by their order in the GeoJSON feature array
   return allFeatures.filter((_, idx) => {
     const polyNum = idx + 1;
     return polyNum >= start && polyNum <= end;
@@ -381,7 +401,7 @@ async function loadAdminStats() {
     setText('adminOverallPct', `${s.overall_pct}%`);
     renderAdminTable();
   } catch(e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--error);padding:24px">Error loading data: ${e.message}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--color-error,#a12c7b);padding:24px">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -419,7 +439,7 @@ function renderAdminTable() {
       <td style="font-variant-numeric:tabular-nums;color:var(--text-muted)">${(w.pending||0).toLocaleString()}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px">
-          <div style="flex:1;background:var(--border,#d4d1ca);border-radius:4px;height:6px;overflow:hidden">
+          <div style="flex:1;background:#d4d1ca;border-radius:4px;height:6px;overflow:hidden">
             <div style="width:${pct}%;background:${barColor};height:100%;border-radius:4px"></div>
           </div>
           <span style="font-size:12px;width:34px;text-align:right;font-variant-numeric:tabular-nums">${pct}%</span>
@@ -434,6 +454,7 @@ function renderAdminTable() {
 // ============================================================
 async function apiFetch(url) {
   const r = await fetch(url, { redirect: 'follow' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 async function apiPost(url, body) {
@@ -441,6 +462,7 @@ async function apiPost(url, body) {
     method: 'POST', body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' }, redirect: 'follow'
   });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 function showError(id, msg) {
