@@ -88,22 +88,11 @@
       <div class="polygon-list" id="polygonList"></div>
     </div>
 
-    <!-- New Polygons (user-drawn) — collapsible -->
+    <!-- New Polygons (user-drawn) -->
     <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
-      <div class="drawn-section-header" id="drawnSectionHeader">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          <label class="field-label" style="margin:0;cursor:pointer">New Polygons <span id="drawnCount" style="font-weight:400;color:var(--blue)"></span></label>
-          <button class="btn-draw-fab" id="btnDrawFab" title="Draw a new polygon on the map">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-            Draw
-          </button>
-        </div>
-        <span class="drawn-toggle-icon" id="drawnToggleIcon">&#9660;</span>
-      </div>
-      <div class="drawn-section-body" id="drawnSectionBody">
-        <div class="drawn-polygon-list" id="drawnPolygonList">
-          <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.<br><small style="color:var(--text-faint)">Click Draw above to start.</small></div>
-        </div>
+      <label class="field-label">New Polygons</label>
+      <div class="drawn-polygon-list" id="drawnPolygonList">
+        <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
       </div>
     </div>
 
@@ -142,7 +131,7 @@
         <button class="btn btn-no" id="btnNo" title="N">No — Not Coconut</button>
       </div>
       <div class="verify-actions verify-actions-secondary">
-        <button class="btn btn-modify" id="btnModify" title="M">✏️ Modify Boundary</button>
+        <button class="btn btn-modify" id="btnModify" title="M">Modify</button>
         <button class="btn btn-skip" id="btnSkip" title="Space">Skip</button>
       </div>
       <div class="verify-nav">
@@ -165,6 +154,7 @@
         <button class="close-btn" id="closeGuide">&times;</button>
       </div>
       <div class="guide-scroll">
+        <!-- YES Section -->
         <div class="guide-section">
           <div class="guide-section-label guide-label-yes">YES — Coconut</div>
           <div class="guide-grid">
@@ -189,6 +179,8 @@
             Round palm crowns in regular grid &bull; Lighter green with gaps between trees &bull; Star/rosette frond pattern at high zoom
           </div>
         </div>
+
+        <!-- NO Section -->
         <div class="guide-section">
           <div class="guide-section-label guide-label-no">NO — Not Coconut</div>
           <div class="guide-grid">
@@ -225,54 +217,16 @@
 
   <script src="app.js"></script>
 
+  <!-- Visual Guide Panel -->
   <script>
-  // Collapsible drawn polygons section
   (function() {
-    const header = document.getElementById('drawnSectionHeader');
-    const section = document.getElementById('drawnPolygonsSection');
-    const icon = document.getElementById('drawnToggleIcon');
-    if (!header) return;
-    header.addEventListener('click', function(e) {
-      if (e.target.closest('#btnDrawFab')) return; // don't collapse when clicking Draw
-      section.classList.toggle('drawn-section-collapsed');
-    });
-  })();
-
-  // Draw FAB wires into Leaflet.draw
-  (function() {
-    const btn = document.getElementById('btnDrawFab');
-    let drawHandler = null;
-    if (!btn) return;
-    btn.addEventListener('click', function() {
-      if (drawHandler) {
-        drawHandler.disable();
-        drawHandler = null;
-        btn.classList.remove('draw-active');
-        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg> Draw';
-        return;
-      }
-      if (!window.map || !window.L) return;
-      btn.classList.add('draw-active');
-      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Cancel';
-      drawHandler = new L.Draw.Polygon(window.map, {
-        allowIntersection: false,
-        showArea: true,
-        shapeOptions: { color: '#2980b9', weight: 2, dashArray: '6 4', fillColor: '#2980b9', fillOpacity: 0.2 }
-      });
-      drawHandler.enable();
-      window.map.once(L.Draw.Event.CREATED, function() {
-        drawHandler = null;
-        btn.classList.remove('draw-active');
-        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg> Draw';
-      });
-      window.map.once(L.Draw.Event.DRAWSTOP, function() {
-        if (drawHandler) {
-          drawHandler = null;
-          btn.classList.remove('draw-active');
-          btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg> Draw';
-        }
-      });
-    });
+    var guideBtn = document.getElementById('guideToggle');
+    var guidePanel = document.getElementById('guidePanel');
+    var closeGuide = document.getElementById('closeGuide');
+    if (guideBtn && guidePanel) {
+      guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
+      closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
+    }
   })();
   </script>
 </body>
