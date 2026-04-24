@@ -15,53 +15,146 @@
 </head>
 <body>
 
-  <!-- ===================== REGISTRATION MODAL ===================== -->
+  <!-- ===================== WORKER REGISTRATION & SIGN-IN MODAL ===================== -->
   <div class="modal-overlay" id="userModal">
-    <div class="modal-card" style="width:440px;text-align:left;">
+    <div class="modal-card" style="width:460px;text-align:left;">
       <h2 class="modal-title" style="text-align:center">🌴 Coconut Verifier</h2>
-      <p class="modal-desc" style="text-align:center">Enter your details to start verifying polygons.</p>
+      <p class="modal-desc" style="text-align:center;margin-bottom:18px">Sign in or register to start verifying coconut polygons.</p>
 
-      <!-- Register banner -->
-      <div class="register-banner">
-        <span>New volunteer?</span>
-        <a href="YOUR_GOOGLE_FORM_LINK_HERE" target="_blank" rel="noopener noreferrer" class="register-link">Register via Google Form →</a>
+      <!-- Tab switcher -->
+      <div class="reg-tabs">
+        <button class="reg-tab reg-tab-active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+        <button class="reg-tab" id="tabRegister" onclick="switchTab('register')">Register</button>
       </div>
 
-      <label class="field-label" style="margin-top:12px">Your Name</label>
-      <input type="text" id="userName" class="modal-input" placeholder="e.g. Athithiyan" autocomplete="off" />
+      <!-- ===== SIGN IN PANEL ===== -->
+      <div id="panelLogin">
+        <label class="field-label" style="margin-top:14px">Your Email</label>
+        <input type="email" id="loginEmail" class="modal-input" placeholder="athi@email.com" autocomplete="off" />
+        <div id="loginError" class="reg-error hidden"></div>
+        <button class="btn btn-primary modal-btn" id="btnSignIn" style="margin-top:12px">Sign In →</button>
+      </div>
 
-      <label class="field-label" style="margin-top:4px">Your Email</label>
-      <input type="email" id="userEmail" class="modal-input" placeholder="e.g. athi@email.com" autocomplete="off" />
+      <!-- ===== REGISTER PANEL ===== -->
+      <div id="panelRegister" style="display:none">
 
-      <label class="field-label" style="margin-top:4px">District</label>
-      <select id="modalDistrictSelect" class="select-input" style="margin-bottom:14px">
-        <option value="">— Choose your assigned district —</option>
-      </select>
+        <!-- Step 1: Details -->
+        <div id="regStep1">
+          <label class="field-label" style="margin-top:14px">Full Name</label>
+          <input type="text" id="regName" class="modal-input" placeholder="e.g. Athithiyan MR" autocomplete="off" />
+          <label class="field-label" style="margin-top:6px">Email</label>
+          <input type="email" id="regEmail" class="modal-input" placeholder="athi@email.com" autocomplete="off" />
+          <label class="field-label" style="margin-top:6px">District</label>
+          <select id="regDistrict" class="select-input" style="margin-bottom:0">
+            <option value="">— Select your district —</option>
+          </select>
+          <div id="regStep1Error" class="reg-error hidden"></div>
+          <button class="btn btn-primary modal-btn" id="btnStep1Next" style="margin-top:14px" disabled>Next: Choose Range →</button>
+        </div>
 
-      <!-- Polygon range slider — shown after district chosen -->
-      <div id="rangeSection" style="display:none">
-        <label class="field-label">Polygon Range <span id="rangeTotalLabel" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
-        <div class="range-row">
-          <div class="range-col">
-            <span class="range-sub">From</span>
-            <input type="number" id="rangeFrom" class="range-num-input" min="1" value="1" />
+        <!-- Step 2: Range Picker -->
+        <div id="regStep2" style="display:none">
+          <div class="reg-back-row">
+            <button class="btn btn-sm btn-outline" onclick="goRegStep1()">← Back</button>
+            <span id="regStep2District" style="font-weight:600;color:var(--primary)"></span>
           </div>
-          <div class="range-slider-wrap">
-            <div class="dual-slider" id="dualSlider">
-              <div class="slider-track" id="sliderTrack"></div>
-              <input type="range" id="sliderMin" class="range-thumb range-thumb-min" min="1" max="100" value="1" step="1" />
-              <input type="range" id="sliderMax" class="range-thumb range-thumb-max" min="1" max="100" value="100" step="1" />
+
+          <label class="field-label" style="margin-top:12px">
+            Select Your Polygon Range
+            <span id="regTotalLabel" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text-muted)"></span>
+          </label>
+
+          <div id="takenLegend" class="taken-legend hidden">
+            <span class="taken-dot"></span> Already assigned ranges shown in pink
+          </div>
+
+          <!-- Dual range slider -->
+          <div class="range-row" style="margin-top:8px">
+            <div class="range-col">
+              <span class="range-sub">From</span>
+              <input type="number" id="regRangeFrom" class="range-num-input" min="1" value="1" />
+            </div>
+            <div class="range-slider-wrap" style="position:relative">
+              <div class="dual-slider" id="regDualSlider">
+                <div class="slider-track" id="regSliderTrack"></div>
+                <input type="range" id="regSliderMin" class="range-thumb range-thumb-min" min="1" max="100" value="1" step="1" />
+                <input type="range" id="regSliderMax" class="range-thumb range-thumb-max" min="1" max="100" value="100" step="1" />
+              </div>
+              <div class="taken-overlay" id="takenOverlay"></div>
+            </div>
+            <div class="range-col">
+              <span class="range-sub">To</span>
+              <input type="number" id="regRangeTo" class="range-num-input" min="1" value="100" />
             </div>
           </div>
-          <div class="range-col">
-            <span class="range-sub">To</span>
-            <input type="number" id="rangeTo" class="range-num-input" min="1" value="100" />
-          </div>
+
+          <div class="range-info" id="regRangeInfo">Select a range above</div>
+          <div id="overlapWarning" class="reg-error hidden">⚠️ This range overlaps with an existing assignment!</div>
+
+          <button class="btn btn-primary modal-btn" id="btnRegSubmit" style="margin-top:14px">Register &amp; Start →</button>
+          <div id="regSubmitError" class="reg-error hidden" style="margin-top:8px"></div>
         </div>
-        <div class="range-info" id="rangeInfo">Polygons 1 – 100 selected (100 total)</div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ADMIN PASSWORD GATE ===================== -->
+  <div class="modal-overlay hidden" id="adminAuthModal">
+    <div class="modal-card" style="width:360px;text-align:center">
+      <h2 class="modal-title">🔒 Admin Access</h2>
+      <p class="modal-desc">Enter the admin password to access the monitor dashboard.</p>
+      <input type="password" id="adminPwdInput" class="modal-input" placeholder="Admin password" style="margin-top:12px" />
+      <div id="adminAuthError" class="reg-error hidden" style="margin-top:6px"></div>
+      <button class="btn btn-primary modal-btn" id="btnAdminAuth" style="margin-top:10px">Access Dashboard</button>
+    </div>
+  </div>
+
+  <!-- ===================== ADMIN MONITOR PANEL ===================== -->
+  <div class="modal-overlay hidden" id="adminModal">
+    <div class="modal-card" style="width:92vw;max-width:960px;max-height:88vh;overflow:auto;text-align:left">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <h2 class="modal-title" style="margin:0">🌴 Admin Monitor</h2>
+        <button class="close-btn" id="closeAdmin" style="font-size:22px">&times;</button>
       </div>
 
-      <button class="btn btn-primary modal-btn" id="userNameSubmit" style="margin-top:14px" disabled>Start Verifying</button>
+      <!-- Summary cards -->
+      <div class="admin-summary-grid">
+        <div class="admin-stat-card"><div class="admin-stat-val" id="adminTotalWorkers">—</div><div class="admin-stat-label">Workers</div></div>
+        <div class="admin-stat-card"><div class="admin-stat-val" id="adminTotalAssigned">—</div><div class="admin-stat-label">Total Assigned</div></div>
+        <div class="admin-stat-card admin-stat-card-green"><div class="admin-stat-val" id="adminTotalVerified">—</div><div class="admin-stat-label">Verified</div></div>
+        <div class="admin-stat-card admin-stat-card-blue"><div class="admin-stat-val" id="adminOverallPct">—</div><div class="admin-stat-label">Overall Progress</div></div>
+      </div>
+
+      <!-- Filter row -->
+      <div style="display:flex;gap:8px;margin:14px 0 10px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="adminSearch" class="modal-input" placeholder="Search name, email, district..." style="flex:1;min-width:160px;margin:0" />
+        <select id="adminFilterDistrict" class="select-input" style="margin:0;min-width:150px">
+          <option value="">All Districts</option>
+        </select>
+        <button class="btn btn-sm" id="adminRefreshBtn">🔄 Refresh</button>
+      </div>
+
+      <!-- Workers table -->
+      <div style="overflow-x:auto">
+        <table class="admin-table" id="adminTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>District</th>
+              <th>Range</th>
+              <th>Assigned</th>
+              <th>Verified</th>
+              <th>Pending</th>
+              <th>Progress</th>
+            </tr>
+          </thead>
+          <tbody id="adminTableBody">
+            <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -103,9 +196,11 @@
         </div>
       </div>
       <div id="assignmentBadge" class="assignment-badge hidden"></div>
+      <!-- Admin monitor button (visible only to admin role) -->
+      <button class="btn btn-sm" id="adminOpenBtn" style="display:none;margin-top:8px;width:100%" onclick="openAdminPanel()">📊 Admin Monitor</button>
     </div>
 
-    <!-- District Selector (locked after login) -->
+    <!-- District Selector (locked to assignment after login) -->
     <div class="sidebar-section">
       <div class="field-row">
         <label class="field-label" for="districtSelect">District</label>
@@ -250,6 +345,8 @@
     </div>
   </div>
 
+  <!-- registration.js MUST load before app.js -->
+  <script src="registration.js"></script>
   <script src="app.js"></script>
   <script>
   (function() {
