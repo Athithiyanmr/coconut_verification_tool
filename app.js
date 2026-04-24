@@ -26,8 +26,8 @@ let drawnPolygons = [];
 let drawnLayer = null;
 let drawControl = null;
 let drawnLabelMarkers = [];
-let drawnLayerMap = {};       // polyId -> leaflet layer
-let editingDrawnId = null;    // id of polygon currently being edited
+let drawnLayerMap = {};
+let editingDrawnId = null;
 let editingLeafletLayer = null;
 
 // ---- Map Setup ----
@@ -38,12 +38,11 @@ L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
   attribution: 'Imagery &copy; Google',
 }).addTo(map);
 
-// Custom pane for drawn polygons — renders above tile but below labels
 map.createPane('drawnPane');
 map.getPane('drawnPane').style.zIndex = 420;
 map.createPane('drawnLabelPane');
 map.getPane('drawnLabelPane').style.zIndex = 450;
-map.createPane('drawnLabelPane').style.pointerEvents = 'none';
+map.getPane('drawnLabelPane').style.pointerEvents = 'none';
 
 // ---- DOM Refs ----
 const $ = (s) => document.querySelector(s);
@@ -55,6 +54,26 @@ const sidebarFooter = $('#sidebarFooter');
 const polygonList = $('#polygonList');
 const verifyPanel = $('#verifyPanel');
 const loadingOverlay = $('#loadingOverlay');
+
+// ---- Badge + Panel helpers ----
+function updateDrawnBadge() {
+  const badge = $('#drawnCountBadge');
+  if (!badge) return;
+  const count = drawnPolygons.filter(p => p.district === currentDistrict).length;
+  badge.textContent = count;
+  // highlight badge if any polygons exist
+  badge.style.background = count > 0 ? 'var(--blue)' : 'var(--text-faint)';
+}
+
+function expandDrawnPanel() {
+  const btn = $('#drawnToggleBtn');
+  const body = $('#drawnBody');
+  const chevron = $('#drawnChevron');
+  if (!btn || !body) return;
+  btn.setAttribute('aria-expanded', 'true');
+  body.classList.add('drawn-body-open');
+  if (chevron) chevron.style.transform = 'rotate(180deg)';
+}
 
 // ---- Cloud Sync ----
 async function loadFromCloud() {
@@ -170,6 +189,8 @@ map.on(L.Draw.Event.CREATED, (e) => {
   saveOneDrawnPolygon(entry);
   renderDrawnPolygonsOnMap();
   renderDrawnPolygonList();
+  // Auto-expand the panel so user immediately sees the new polygon
+  expandDrawnPanel();
 });
 
 function detectOverlaps(newFeature) {
@@ -279,7 +300,6 @@ function editNoteDrawnPolygon(polyId) {
 }
 
 // ---- Render Drawn Polygons on Map ----
-// Each polygon gets its own distinct color from a palette to reduce visual confusion
 const DRAWN_COLORS = ['#2980b9','#8e44ad','#16a085','#d35400','#c0392b','#27ae60','#2c3e50','#f39c12'];
 
 function getDrawnColor(index) {
@@ -303,7 +323,6 @@ function renderDrawnPolygonsOnMap() {
         color: color,
         weight: isEditing ? 3 : 2,
         dashArray: isEditing ? null : '6 4',
-        // Low fillOpacity so stacked polygons don't fully cover each other
         fillColor: color,
         fillOpacity: isEditing ? 0.25 : 0.10,
         opacity: 0.9,
@@ -313,7 +332,6 @@ function renderDrawnPolygonsOnMap() {
     drawnLayer.addLayer(layer);
     drawnLayerMap[entry.id] = layer;
 
-    // Label in matching color
     const centroid = getCentroid(entry.geometry);
     if (centroid) {
       const latlng = L.latLng(centroid[1], centroid[0]);
@@ -339,7 +357,32 @@ function clearDrawnLabels() {
   drawnLabelMarkers = [];
 }
 
-function addDrawnLabels() {}
+// Re-render drawn labels on map move (mirrors addLabels behaviour)
+function addDrawnLabels() {
+  clearDrawnLabels();
+  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+  districtPolys.forEach((entry, index) => {
+    const isEditing = editingDrawnId === entry.id;
+    const color = isEditing ? '#e67e22' : getDrawnColor(index);
+    const centroid = getCentroid(entry.geometry);
+    if (!centroid) return;
+    const latlng = L.latLng(centroid[1], centroid[0]);
+    if (!map.getBounds().contains(latlng)) return;
+    const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
+    const marker = L.marker(latlng, {
+      pane: 'drawnLabelPane',
+      icon: L.divIcon({
+        className: labelClass,
+        html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
+        iconSize: [28, 18], iconAnchor: [14, 9],
+      }),
+      interactive: true,
+      zIndexOffset: 1000 + index,
+    }).addTo(map);
+    marker.on('click', () => zoomToDrawnPolygon(entry));
+    drawnLabelMarkers.push(marker);
+  });
+}
 
 function zoomToDrawnPolygon(entry) {
   const layer = L.geoJSON(entry.geometry);
@@ -353,6 +396,10 @@ function renderDrawnPolygonList() {
   if (!list) return;
 
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+
+  // Always update the badge
+  updateDrawnBadge();
+
   list.querySelectorAll('.drawn-polygon-item').forEach(el => el.remove());
 
   if (districtPolys.length === 0) {
@@ -370,7 +417,6 @@ function renderDrawnPolygonList() {
 
     const div = document.createElement('div');
     div.className = `drawn-polygon-item${isEditing ? ' dp-editing' : ''}`;
-    // Use the polygon's unique color for its left border
     div.style.borderLeftColor = color;
     div.style.background = isEditing ? 'var(--edit-orange-light)' : `${color}14`;
     div.innerHTML = `
@@ -738,6 +784,7 @@ if (refreshBtn) {
     if (currentDistrict && geojsonData) {
       polygonLayer.setStyle((feat) => getPolygonStyle(feat));
       renderPolygonList(); updateProgress(); addLabels();
+      renderDrawnPolygonsOnMap(); renderDrawnPolygonList();
     }
     refreshBtn.disabled = false; refreshBtn.textContent = 'Refresh';
   });
@@ -896,14 +943,3 @@ setInterval(async () => {
 
 // ---- Init ----
 init();
-
-// ---- Visual Guide Panel ----
-(function() {
-  var guideBtn = document.getElementById('guideToggle');
-  var guidePanel = document.getElementById('guidePanel');
-  var closeGuide = document.getElementById('closeGuide');
-  if (guideBtn && guidePanel) {
-    guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
-    closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
-  }
-})();
