@@ -60,12 +60,19 @@ body {
 .sidebar-header {
   padding: 16px 18px;
   border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
 }
 .logo-row { display: flex; align-items: center; gap: 10px; color: var(--primary); }
 .logo-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .logo-sub { font-size: 12px; color: var(--text-muted); }
 
-.sidebar-section { padding: 14px 18px; border-bottom: 1px solid var(--divider); }
+/* sidebar-section is shrink:0 by default — only special sections grow */
+.sidebar-section {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
 .field-label {
   display: block; font-size: 11px; font-weight: 600;
   color: var(--text-muted); text-transform: uppercase;
@@ -109,11 +116,23 @@ body {
 .dot-no { background: var(--no); }
 .dot-skip { background: var(--pending); }
 
-/* Polygon List */
-.polygon-list-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+/* ============================================================
+   POLYGON LIST SECTION — takes all remaining vertical space
+   ============================================================ */
+.polygon-list-section {
+  flex: 1 1 0;
+  min-height: 0;          /* critical: allows flex child to shrink below content size */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--divider);
+}
+
 .list-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
+  flex-shrink: 0;
 }
 .filter-btns { display: flex; gap: 4px; }
 .filter-btn {
@@ -125,8 +144,13 @@ body {
 .filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 .polygon-list {
-  flex: 1; overflow-y: auto; margin: 0 -18px; padding: 0 18px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -18px;
+  padding: 0 18px;
 }
+
 .poly-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: var(--radius);
@@ -151,10 +175,150 @@ body {
 .poly-status.s-no { color: var(--no); }
 .poly-status.s-pending { color: var(--pending); }
 
+/* ============================================================
+   DRAWN POLYGONS SECTION — fixed height, never covers poly list
+   ============================================================ */
+.drawn-polygons-section {
+  flex-shrink: 0;          /* does NOT grow — fixed at natural height */
+  max-height: 220px;       /* hard cap so it never takes over */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--divider);
+  transition: max-height .2s ease;
+}
+
+/* Collapse when empty */
+.drawn-polygons-section:has(#drawnEmpty:not([style*='none'])) {
+  max-height: 62px;        /* just enough for the label + "no polygons" text */
+}
+
+.drawn-polygon-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 1px 0;
+}
+
+.drawn-empty { font-size: 12px; color: var(--text-faint); padding: 4px 0; }
+
+.drawn-polygon-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(41,128,185,.22);
+  border-left: 3px solid var(--blue);
+  background: var(--blue-light);
+  transition: background .12s, border-color .12s;
+  flex-shrink: 0;
+}
+.drawn-polygon-item:hover { background: #d4eaf7; }
+
+/* Editing state — orange highlight */
+.drawn-polygon-item.dp-editing {
+  border-left-color: var(--edit-orange);
+  background: var(--edit-orange-light);
+  border-color: rgba(230,126,34,.35);
+}
+.drawn-polygon-item.dp-editing:hover { background: #fde8c8; }
+
+/* Card header row */
+.dp-header { display: flex; align-items: center; gap: 7px; }
+
+.dp-id-badge {
+  background: var(--blue); color: #fff;
+  border-radius: 5px; padding: 2px 8px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .02em; flex-shrink: 0;
+}
+.dp-editing .dp-id-badge { background: var(--edit-orange); }
+
+.dp-area {
+  margin-left: auto; font-size: 11px; color: var(--text-muted);
+  background: rgba(0,0,0,.05); border-radius: 4px;
+  padding: 2px 7px; font-variant-numeric: tabular-nums;
+}
+
+.dp-note-text {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.dp-meta-row { font-size: 11px; color: var(--text-muted); }
+
+.dp-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+
+.dp-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 5px;
+  border: 1px solid var(--border); background: rgba(255,255,255,.8);
+  cursor: pointer; color: var(--text-muted);
+  font-family: var(--font); font-weight: 500;
+  transition: all .12s; line-height: 1.4;
+}
+.dp-btn:hover { background: #fff; color: var(--text); border-color: var(--blue); }
+.dp-btn-edit:hover, .dp-btn-active {
+  color: var(--edit-orange) !important;
+  border-color: var(--edit-orange) !important;
+  background: var(--edit-orange-light) !important;
+}
+.dp-btn-delete:hover {
+  color: var(--danger); border-color: var(--danger); background: var(--danger-light);
+}
+
+/* ---- Edit Mode Bar ---- */
+.edit-mode-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: var(--edit-orange-light);
+  border: 1px solid rgba(230,126,34,.35);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.edit-mode-label {
+  flex: 1; font-size: 11px; font-weight: 600;
+  color: var(--edit-orange); min-width: 0;
+}
+.edit-mode-btns { display: flex; gap: 5px; }
+
+.btn-edit-save {
+  padding: 4px 10px; border-radius: 5px; border: none;
+  background: var(--edit-orange); color: #fff;
+  font: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: background .12s;
+}
+.btn-edit-save:hover { background: #ca6f1e; }
+
+.btn-edit-cancel {
+  padding: 4px 10px; border-radius: 5px;
+  border: 1px solid var(--border); background: #fff;
+  color: var(--text-muted); font: inherit; font-size: 11px;
+  font-weight: 500; cursor: pointer; transition: all .12s;
+}
+.btn-edit-cancel:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Blue drawn-polygon map labels */
+.drawn-label {
+  background: rgba(41,128,185,.85); color: #fff;
+  border: 1px solid var(--blue-border); border-radius: 4px;
+  padding: 1px 5px; font-size: 11px; font-weight: 700;
+  white-space: nowrap; font-family: var(--font);
+}
+.drawn-label-editing { background: rgba(230,126,34,.9); border-color: #ca6f1e; }
+
 /* Sidebar Footer */
 .sidebar-footer {
-  padding: 14px 18px; border-top: 1px solid var(--divider);
+  padding: 14px 18px;
+  border-top: 1px solid var(--divider);
   display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0;
 }
 
 /* --- Buttons --- */
@@ -179,9 +343,7 @@ body {
 .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
 
 /* --- Map --- */
-.map-container {
-  flex: 1; position: relative; height: 100vh;
-}
+.map-container { flex: 1; position: relative; height: 100vh; }
 #map { width: 100%; height: 100%; z-index: 1; }
 
 /* Polygon labels on map */
@@ -368,196 +530,14 @@ body {
 .btn-export-all-geo:hover { background: #eaf2f8; }
 .btn-export-all-geo:disabled { opacity: .5; cursor: wait; }
 
-/* ============================================================
-   DRAWN POLYGONS — Improved Card UI
-   ============================================================ */
-.drawn-polygons-section { border-bottom: 1px solid var(--divider); }
-
-.drawn-polygon-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-  margin: 0 -4px;
-  padding: 2px 4px;
-}
-
-.drawn-empty { font-size: 12px; color: var(--text-faint); padding: 6px 0; }
-
-.drawn-polygon-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 9px 11px;
-  border-radius: var(--radius);
-  border: 1px solid rgba(41,128,185,.25);
-  border-left: 3px solid var(--blue);
-  background: var(--blue-light);
-  transition: background .12s, border-color .12s;
-}
-.drawn-polygon-item:hover { background: #d4eaf7; }
-
-/* Editing state — orange highlight */
-.drawn-polygon-item.dp-editing {
-  border-left-color: var(--edit-orange);
-  background: var(--edit-orange-light);
-  border-color: rgba(230,126,34,.35);
-}
-.drawn-polygon-item.dp-editing:hover { background: #fde8c8; }
-
-/* Card header row */
-.dp-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.dp-id-badge {
-  background: var(--blue);
-  color: #fff;
-  border-radius: 5px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  flex-shrink: 0;
-}
-.dp-editing .dp-id-badge { background: var(--edit-orange); }
-
-.dp-area {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: rgba(0,0,0,.05);
-  border-radius: 4px;
-  padding: 2px 7px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Note text */
-.dp-note-text {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Meta row */
-.dp-meta-row {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-/* Action buttons row */
-.dp-actions {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
-.dp-btn {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.8);
-  cursor: pointer;
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-weight: 500;
-  transition: all .12s;
-  line-height: 1.4;
-}
-.dp-btn:hover { background: #fff; color: var(--text); border-color: var(--blue); }
-
-.dp-btn-edit:hover, .dp-btn-active {
-  color: var(--edit-orange) !important;
-  border-color: var(--edit-orange) !important;
-  background: var(--edit-orange-light) !important;
-}
-
-.dp-btn-delete:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: var(--danger-light);
-}
-
-/* ---- Edit Mode Bar (inside sidebar) ---- */
-.edit-mode-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  background: var(--edit-orange-light);
-  border: 1px solid rgba(230,126,34,.35);
-  border-radius: var(--radius);
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-.edit-mode-label {
-  flex: 1;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--edit-orange);
-  min-width: 0;
-}
-.edit-mode-btns { display: flex; gap: 6px; }
-
-.btn-edit-save {
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: none;
-  background: var(--edit-orange);
-  color: #fff;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .12s;
-}
-.btn-edit-save:hover { background: #ca6f1e; }
-
-.btn-edit-cancel {
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all .12s;
-}
-.btn-edit-cancel:hover { border-color: var(--danger); color: var(--danger); }
-
-/* Blue drawn-polygon map labels */
-.drawn-label {
-  background: rgba(41,128,185,.85);
-  color: #fff;
-  border: 1px solid var(--blue-border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-  font-family: var(--font);
-}
-.drawn-label-editing {
-  background: rgba(230,126,34,.9);
-  border-color: #ca6f1e;
-}
-
 /* --- Responsive --- */
 @media (max-width: 768px) {
-  .sidebar { width: 100%; min-width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--divider); }
+  .sidebar { width: 100%; min-width: 100%; height: auto; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--divider); }
   body { flex-direction: column; }
-  .map-container { flex: 1; height: 60vh; }
+  .map-container { flex: 1; height: 50vh; }
   .verify-panel { min-width: 300px; max-width: 90vw; bottom: 12px; }
-  .polygon-list-section { max-height: 20vh; }
+  .polygon-list-section { max-height: 28vh; }
+  .drawn-polygons-section { max-height: 120px; }
   .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
   .guide-fab { top: auto; bottom: 80px; right: 12px; }
   .guide-card img { height: 100px; }
