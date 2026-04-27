@@ -30,11 +30,6 @@ let drawnLayerMap = {};
 let editingDrawnId = null;
 let editingLeafletLayer = null;
 
-// Existing polygon editing state
-let editingExistingId = null;
-let editingExistingLayer = null;
-let editingExistingOrigGeom = null;
-
 // ---- Map Setup ----
 const map = L.map('map', { center: [10.8, 78.7], zoom: 7, zoomControl: true });
 
@@ -47,7 +42,7 @@ map.createPane('drawnPane');
 map.getPane('drawnPane').style.zIndex = 420;
 map.createPane('drawnLabelPane');
 map.getPane('drawnLabelPane').style.zIndex = 450;
-map.getPane('drawnLabelPane').style.pointerEvents = 'none';
+map.createPane('drawnLabelPane').style.pointerEvents = 'none';
 
 // ---- DOM Refs ----
 const $ = (s) => document.querySelector(s);
@@ -60,881 +55,811 @@ const polygonList = $('#polygonList');
 const verifyPanel = $('#verifyPanel');
 const loadingOverlay = $('#loadingOverlay');
 
-// ---- Badge helpers ----
-function updateDrawnBadge() {
-  const badge = $('#drawnCountBadge');
-  if (!badge) return;
-  const count = drawnPolygons.filter(p => p.district === currentDistrict).length;
-  badge.textContent = count;
-  badge.style.background = count > 0 ? 'var(--blue)' : 'var(--text-faint)';
+// ---- Cloud Sync ----
+async function loadFromCloud() {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') { setSyncStatus('error'); return false; }
+  try {
+    setSyncStatus('loading');
+    const res = await fetch(`${GSHEET_API}?action=getAll`);
+    const data = await res.json();
+    if (data.verifications) {
+      verificationResults = {};
+      Object.entries(data.verifications).forEach(([key, val]) => {
+        const status = typeof val === 'string' ? val : val.status;
+        if (status === 'pending' || !status) return;
+        verificationResults[key] = typeof val === 'string' ? { status: val, user: 'unknown', timestamp: '' } : val;
+      });
+    }
+    if (Array.isArray(data.drawnPolygons)) drawnPolygons = data.drawnPolygons;
+    setSyncStatus('synced');
+    return true;
+  } catch (e) { console.warn('Cloud load failed:', e); setSyncStatus('error'); return false; }
 }
 
-function expandDrawnPanel() {
-  const btn = $('#drawnToggleBtn');
-  const body = $('#drawnBody');
-  const chevron = $('#drawnChevron');
-  if (btn && body) {
-    body.style.display = '';
-    btn.setAttribute('aria-expanded', 'true');
-    if (chevron) chevron.style.transform = 'rotate(180deg)';
+async function saveOneVerification(key, status, user, timestamp) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'saveVerification', key, status, user, timestamp }) });
+  } catch (e) { console.warn('Save verification failed:', e); }
+}
+
+async function saveOneDrawnPolygon(polygon) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'saveDrawnPolygon', ...polygon }) });
+  } catch (e) { console.warn('Save drawn polygon failed:', e); }
+}
+
+async function deleteOneDrawnPolygon(id, district) {
+  if (GSHEET_API === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return;
+  try {
+    await fetch(GSHEET_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteDrawnPolygon', id, district }) });
+  } catch (e) { console.warn('Delete drawn polygon failed:', e); }
+}
+
+function setSyncStatus(status) {
+  const indicator = $('#syncIndicator');
+  if (!indicator) return;
+  const dot = indicator.querySelector('.sync-dot');
+  const text = indicator.querySelector('.sync-text');
+  dot.className = 'sync-dot';
+  switch (status) {
+    case 'loading': dot.classList.add('sync-loading'); text.textContent = 'Loading...'; break;
+    case 'saving':  dot.classList.add('sync-saving');  text.textContent = 'Saving...'; break;
+    case 'synced':  dot.classList.add('sync-ok');      text.textContent = 'Synced'; break;
+    case 'error':   dot.classList.add('sync-error');   text.textContent = 'Offline'; break;
   }
 }
 
-// ---- District Index ----
-async function loadDistrictIndex() {
-  const res = await fetch('./data/districts.json');
-  districtIndex = await res.json();
-  const districts = Object.keys(districtIndex).sort();
-  districts.forEach(d => {
-    const opt = document.createElement('option');
-    opt.value = d;
-    opt.textContent = `${d} (${districtIndex[d].count} polygons)`;
-    districtSelect.appendChild(opt);
+function getStatus(key) {
+  const entry = verificationResults[key];
+  if (!entry) return null;
+  return typeof entry === 'string' ? entry : entry.status;
+}
+
+function getVerifier(key) {
+  const entry = verificationResults[key];
+  if (!entry) return '';
+  return typeof entry === 'object' ? (entry.user || '') : '';
+}
+
+// ---- Leaflet.draw setup ----
+function setupDrawLayer() {
+  drawnLayer = new L.FeatureGroup();
+  map.addLayer(drawnLayer);
+}
+
+function enableDrawControl() {
+  if (drawControl) { map.removeControl(drawControl); drawControl = null; }
+  drawControl = new L.Control.Draw({
+    position: 'topleft',
+    draw: {
+      polygon: {
+        allowIntersection: false, showArea: true,
+        shapeOptions: { color: '#2980b9', weight: 2, dashArray: '6 4', fillColor: '#2980b9', fillOpacity: 0.15 },
+      },
+      polyline: false, rectangle: false, circle: false, circlemarker: false, marker: false,
+    },
+    edit: { featureGroup: drawnLayer },
+  });
+  map.addControl(drawControl);
+}
+
+map.on(L.Draw.Event.CREATED, (e) => {
+  if (!currentDistrict || !currentUser) { alert('Please select a district and enter your name before drawing.'); return; }
+  const layer = e.layer;
+  const geojson = layer.toGeoJSON();
+  const overlaps = detectOverlaps(geojson);
+  if (overlaps.length > 0) {
+    const ids = overlaps.slice(0, 5).map(o => `#${o.id} (${o.overlap_pct}% overlap)`).join(', ');
+    const extra = overlaps.length > 5 ? ` and ${overlaps.length - 5} more` : '';
+    if (!confirm(`⚠️ Overlaps ${overlaps.length} existing polygon(s):\n\n${ids}${extra}\n\nSave anyway?`)) {
+      if (drawnLayer) drawnLayer.removeLayer(layer); return;
+    }
+  }
+  const area_ha = calculateAreaHa(geojson.geometry);
+  const note = prompt('Add a note for this polygon:') || 'User drawn';
+  const districtDrawn = drawnPolygons.filter(p => p.district === currentDistrict);
+  const polyId = `new_${districtDrawn.length + 1}`;
+  const entry = { district: currentDistrict, id: polyId, geometry: geojson.geometry, area_ha, user: currentUser, timestamp: new Date().toISOString(), note, overlaps_existing: overlaps.map(o => o.id) };
+  drawnPolygons.push(entry);
+  saveOneDrawnPolygon(entry);
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+});
+
+function detectOverlaps(newFeature) {
+  if (!geojsonData || !window.turf) return [];
+  const newPoly = newFeature.type === 'Feature' ? newFeature : turf.feature(newFeature.geometry || newFeature);
+  const newBbox = turf.bbox(newPoly);
+  const overlaps = [];
+  for (const feat of geojsonData.features) {
+    try {
+      const featBbox = turf.bbox(feat);
+      if (newBbox[2] < featBbox[0] || newBbox[0] > featBbox[2] || newBbox[3] < featBbox[1] || newBbox[1] > featBbox[3]) continue;
+      const intersection = turf.intersect(newPoly, feat);
+      if (intersection) {
+        const interArea = turf.area(intersection);
+        if (interArea > 1) overlaps.push({ id: feat.properties.id, overlap_pct: (interArea / turf.area(newPoly) * 100).toFixed(1) });
+      }
+    } catch (err) { /* skip */ }
+  }
+  return overlaps;
+}
+
+function calculateAreaHa(geometry) {
+  let coords;
+  if (geometry.type === 'Polygon') coords = geometry.coordinates[0];
+  else if (geometry.type === 'MultiPolygon') coords = geometry.coordinates[0][0];
+  if (!coords || coords.length < 3) return 0;
+  const latlngs = coords.map(c => L.latLng(c[1], c[0]));
+  if (window.L && L.GeometryUtil && L.GeometryUtil.geodesicArea) return parseFloat((L.GeometryUtil.geodesicArea(latlngs) / 10000).toFixed(4));
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  let area = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [x1, y1] = coords[i], [x2, y2] = coords[i + 1];
+    area += toRad(x2 - x1) * (2 + Math.sin(toRad(y1)) + Math.sin(toRad(y2)));
+  }
+  return parseFloat((Math.abs(area * R * R / 2) / 10000).toFixed(4));
+}
+
+function startEditingDrawnPolygon(polyId) {
+  if (editingDrawnId) stopEditingDrawnPolygon(false);
+  const entry = drawnPolygons.find(p => p.district === currentDistrict && p.id === polyId);
+  if (!entry) return;
+  editingDrawnId = polyId;
+  renderDrawnPolygonsOnMap();
+  const layerGroup = drawnLayerMap[polyId];
+  if (layerGroup) {
+    map.fitBounds(layerGroup.getBounds(), { padding: [60, 60], maxZoom: 18 });
+    layerGroup.eachLayer(l => {
+      if (l.editing) { l.editing.enable(); editingLeafletLayer = l; }
+    });
+  }
+  renderDrawnPolygonList();
+  showEditBar();
+}
+
+function stopEditingDrawnPolygon(save = true) {
+  if (!editingDrawnId) return;
+  if (save && editingLeafletLayer) {
+    const updatedGeoJSON = editingLeafletLayer.toGeoJSON();
+    const entry = drawnPolygons.find(p => p.district === currentDistrict && p.id === editingDrawnId);
+    if (entry) {
+      entry.geometry = updatedGeoJSON.geometry;
+      entry.area_ha = calculateAreaHa(updatedGeoJSON.geometry);
+      saveOneDrawnPolygon(entry);
+    }
+  }
+  if (editingLeafletLayer && editingLeafletLayer.editing) editingLeafletLayer.editing.disable();
+  editingLeafletLayer = null;
+  editingDrawnId = null;
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+  hideEditBar();
+}
+
+function showEditBar() {
+  let bar = document.getElementById('editModeBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'editModeBar';
+    bar.className = 'edit-mode-bar';
+    bar.innerHTML = `
+      <span class="edit-mode-label">✏️ Drag vertices on map to reshape</span>
+      <div class="edit-mode-btns">
+        <button class="btn btn-edit-save" id="btnSaveEdit">Save Shape</button>
+        <button class="btn btn-edit-cancel" id="btnCancelEdit">Cancel</button>
+      </div>`;
+    const section = document.getElementById('drawnPolygonsSection');
+    if (section) section.appendChild(bar);
+  }
+  document.getElementById('btnSaveEdit').onclick = () => stopEditingDrawnPolygon(true);
+  document.getElementById('btnCancelEdit').onclick = () => stopEditingDrawnPolygon(false);
+}
+
+function hideEditBar() {
+  const bar = document.getElementById('editModeBar');
+  if (bar) bar.remove();
+}
+
+function editNoteDrawnPolygon(polyId) {
+  const entry = drawnPolygons.find(p => p.district === currentDistrict && p.id === polyId);
+  if (!entry) return;
+  const newNote = prompt('Edit note:', entry.note || '');
+  if (newNote === null) return;
+  entry.note = newNote;
+  saveOneDrawnPolygon(entry);
+  renderDrawnPolygonList();
+}
+
+const DRAWN_COLORS = ['#2980b9','#8e44ad','#16a085','#d35400','#c0392b','#27ae60','#2c3e50','#f39c12'];
+
+function getDrawnColor(index) {
+  return DRAWN_COLORS[index % DRAWN_COLORS.length];
+}
+
+function renderDrawnPolygonsOnMap() {
+  if (!drawnLayer) return;
+  drawnLayer.clearLayers();
+  clearDrawnLabels();
+  drawnLayerMap = {};
+
+  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+  districtPolys.forEach((entry, index) => {
+    const isEditing = editingDrawnId === entry.id;
+    const color = isEditing ? '#e67e22' : getDrawnColor(index);
+    const layer = L.geoJSON(entry.geometry, {
+      pane: 'drawnPane',
+      style: { color, weight: isEditing ? 3 : 2, dashArray: isEditing ? null : '6 4', fillColor: color, fillOpacity: isEditing ? 0.25 : 0.10, opacity: 0.9 },
+    });
+    layer.on('click', () => zoomToDrawnPolygon(entry));
+    drawnLayer.addLayer(layer);
+    drawnLayerMap[entry.id] = layer;
+    const centroid = getCentroid(entry.geometry);
+    if (centroid) {
+      const latlng = L.latLng(centroid[1], centroid[0]);
+      const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
+      const marker = L.marker(latlng, {
+        pane: 'drawnLabelPane',
+        icon: L.divIcon({
+          className: labelClass,
+          html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
+          iconSize: [28, 18], iconAnchor: [14, 9],
+        }),
+        interactive: true,
+        zIndexOffset: 1000 + index,
+      }).addTo(map);
+      marker.on('click', () => zoomToDrawnPolygon(entry));
+      drawnLabelMarkers.push(marker);
+    }
   });
 }
 
-// ---- Load GeoJSON for a District ----
-async function loadDistrict(districtName) {
-  const entry = districtIndex[districtName];
-  if (!entry) return;
+function clearDrawnLabels() {
+  drawnLabelMarkers.forEach(m => map.removeLayer(m));
+  drawnLabelMarkers = [];
+}
 
-  currentDistrict = districtName;
+function addDrawnLabels() {}
 
-  if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
-  if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
-  labelMarkers.forEach(m => map.removeLayer(m));
-  labelMarkers = [];
+function zoomToDrawnPolygon(entry) {
+  const layer = L.geoJSON(entry.geometry);
+  map.fitBounds(layer.getBounds(), { padding: [60, 60], maxZoom: 18 });
+}
 
-  // Remove old boundary
-  if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
+function renderDrawnPolygonList() {
+  const list = $('#drawnPolygonList');
+  const empty = $('#drawnEmpty');
+  if (!list) return;
+  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
+  list.querySelectorAll('.drawn-polygon-item').forEach(el => el.remove());
+  if (districtPolys.length === 0) { if (empty) empty.style.display = ''; return; }
+  if (empty) empty.style.display = 'none';
+  districtPolys.forEach((entry, index) => {
+    const displayId = `N${entry.id.replace('new_', '')}`;
+    const isOwner = entry.user === currentUser;
+    const isEditing = editingDrawnId === entry.id;
+    const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : '';
+    const color = getDrawnColor(index);
+    const div = document.createElement('div');
+    div.className = `drawn-polygon-item${isEditing ? ' dp-editing' : ''}`;
+    div.style.borderLeftColor = color;
+    div.style.background = isEditing ? 'var(--edit-orange-light)' : `${color}14`;
+    div.innerHTML = `
+      <div class="dp-header">
+        <span class="dp-id-badge" style="background:${color}">${displayId}</span>
+        <span class="dp-area">${entry.area_ha} ha</span>
+      </div>
+      <div class="dp-note-text">${entry.note || 'No note'}</div>
+      <div class="dp-meta-row">${entry.user} · ${ts}</div>
+      <div class="dp-actions">
+        <button class="dp-btn dp-btn-zoom" title="Zoom to polygon">🔍 Zoom</button>
+        ${isOwner ? `
+          <button class="dp-btn dp-btn-edit ${isEditing ? 'dp-btn-active' : ''}" title="Edit shape">
+            ✏️ ${isEditing ? 'Editing…' : 'Edit Shape'}
+          </button>
+          <button class="dp-btn dp-btn-note" title="Edit note">📝 Note</button>
+          <button class="dp-btn dp-btn-delete" title="Delete polygon">🗑 Delete</button>
+        ` : ''}
+      </div>`;
+    div.querySelector('.dp-btn-zoom').addEventListener('click', () => zoomToDrawnPolygon(entry));
+    if (isOwner) {
+      div.querySelector('.dp-btn-edit').addEventListener('click', () => { isEditing ? stopEditingDrawnPolygon(false) : startEditingDrawnPolygon(entry.id); });
+      div.querySelector('.dp-btn-note').addEventListener('click', () => editNoteDrawnPolygon(entry.id));
+      div.querySelector('.dp-btn-delete').addEventListener('click', () => deleteDrawnPolygon(entry.id));
+    }
+    list.appendChild(div);
+  });
+}
 
-  const res = await fetch(`./data/${entry.file}`);
+function deleteDrawnPolygon(polyId) {
+  if (!confirm('Delete this drawn polygon?')) return;
+  if (editingDrawnId === polyId) stopEditingDrawnPolygon(false);
+  drawnPolygons = drawnPolygons.filter(p => !(p.district === currentDistrict && p.id === polyId));
+  deleteOneDrawnPolygon(polyId, currentDistrict);
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+}
+
+async function init() {
+  const res = await fetch('data/districts.json');
+  districtIndex = await res.json();
+  const names = Object.keys(districtIndex).sort();
+  names.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = `${name} (${districtIndex[name].count} polygons)`;
+    districtSelect.appendChild(opt);
+  });
+  try {
+    const bRes = await fetch('data/district_boundaries.geojson');
+    districtBoundaries = await bRes.json();
+  } catch (e) { console.warn('Could not load district boundaries'); }
+  setupDrawLayer();
+  await loadFromCloud();
+  promptUserName();
+}
+
+function promptUserName() {
+  const modal = $('#userModal');
+  if (modal) modal.classList.remove('hidden');
+  const input = $('#userName');
+  const btn = $('#userNameSubmit');
+  if (input && btn) {
+    const submit = () => {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      currentUser = name;
+      modal.classList.add('hidden');
+      if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = name;
+    };
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    input.focus();
+  }
+}
+
+districtSelect.addEventListener('change', async () => {
+  const name = districtSelect.value;
+  if (!name) return;
+  await loadFromCloud();
+  await loadDistrict(name);
+});
+
+async function loadDistrict(name) {
+  const info = districtIndex[name];
+  if (!info) return;
+  currentDistrict = name;
+  selectedPolygonId = null;
+  verifyPanel.classList.add('hidden');
+  loadingOverlay.classList.remove('hidden');
+  districtInfo.classList.remove('hidden');
+  districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+  const res = await fetch(info.file);
   geojsonData = await res.json();
-
-  const allFeatures = geojsonData.features;
-
-  renderPolygons(allFeatures);
-  updateProgress();
-  renderList();
-  updateDrawnBadge();
-
-  // Show UI
+  clearMap();
+  showDistrictBoundary(name);
+  polygonLayer = L.geoJSON(geojsonData, {
+    style: (feature) => getPolygonStyle(feature),
+    onEachFeature: (feature, layer) => { layer.on('click', () => selectPolygon(feature.properties.id)); }
+  }).addTo(map);
+  addLabels();
+  map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
   progressSection.style.display = '';
   polygonListSection.style.display = '';
   sidebarFooter.style.display = '';
   $('#drawnPolygonsSection').style.display = '';
-  $('#drawBtn').style.display = '';
-
-  districtInfo.textContent = `${allFeatures.length} polygons loaded`;
-  districtInfo.classList.remove('hidden');
-
-  // Zoom to district
-  const bounds = polygonLayer.getBounds();
-  if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
-
-  // Load district boundary
-  try {
-    const bRes = await fetch('./data/districts_boundary.geojson');
-    districtBoundaries = await bRes.json();
-    const feat = districtBoundaries.features.find(
-      f => (f.properties.district || f.properties.DISTRICT || '').toLowerCase() === districtName.toLowerCase()
-    );
-    if (feat) {
-      boundaryLayer = L.geoJSON(feat, {
-        style: { color: '#e67e22', weight: 2.5, fill: false, dashArray: '6 4' }
-      }).addTo(map);
-    }
-  } catch(e) {}
-
-  // Restore drawn polygons for this district
-  renderDrawnPolygons();
+  renderPolygonList();
+  updateProgress();
+  renderDrawnPolygonsOnMap();
+  renderDrawnPolygonList();
+  loadingOverlay.classList.add('hidden');
+  enableDrawControl();
+  map.off('moveend', onMapMove);
+  map.on('moveend', onMapMove);
 }
 
-// ---- Render Polygons ----
-function renderPolygons(features) {
+function getPolygonStyle(feature) {
+  const key = `${currentDistrict}:${feature.properties.id}`;
+  const status = getStatus(key);
+  if (status === 'yes') return { color: '#27ae60', weight: 2, fillColor: '#27ae60', fillOpacity: 0.35, dashArray: null };
+  if (status === 'no') return { color: '#e74c3c', weight: 2, fillColor: '#e74c3c', fillOpacity: 0.35, dashArray: null };
+  return { color: '#f1c40f', weight: 2, fillColor: '#f1c40f', fillOpacity: 0.3, dashArray: '5 5' };
+}
+
+function clearMap() {
   if (polygonLayer) { map.removeLayer(polygonLayer); polygonLayer = null; }
+  if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
+  if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
+  clearLabels();
+  clearDrawnLabels();
+  if (drawnLayer) drawnLayer.clearLayers();
+}
+
+function showDistrictBoundary(districtName) {
+  if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
+  if (!districtBoundaries) return;
+  const feature = districtBoundaries.features.find(f => f.properties.name === districtName);
+  if (!feature) return;
+  boundaryLayer = L.geoJSON(feature, {
+    style: { color: '#ffffff', weight: 2.5, fillOpacity: 0, dashArray: '8 4', opacity: 0.8 },
+    interactive: false,
+  }).addTo(map);
+  boundaryLayer.bringToBack();
+}
+
+function clearLabels() {
   labelMarkers.forEach(m => map.removeLayer(m));
   labelMarkers = [];
-
-  polygonLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
-    style: feature => stylePolygon(feature),
-    onEachFeature: (feature, layer) => {
-      const pid = feature.properties.id;
-      layer.on('click', () => openVerifyPanel(pid));
-    }
-  }).addTo(map);
-
-  addLabels(features);
 }
 
-function stylePolygon(feature) {
-  const pid = feature.properties.id;
-  const result = verificationResults[`${currentDistrict}:${pid}`];
-  const status = result ? result.status : null;
-  if (status === 'yes')  return { color: '#2d6a4f', weight: 1.5, fillColor: '#52b788', fillOpacity: 0.55 };
-  if (status === 'no')   return { color: '#9b2335', weight: 1.5, fillColor: '#e06c75', fillOpacity: 0.55 };
-  return { color: '#5a4e3a', weight: 1, fillColor: '#d4a843', fillOpacity: 0.35 };
-}
-
-function addLabels(features) {
+function addLabels() {
+  clearLabels();
+  if (!geojsonData) return;
   const zoom = map.getZoom();
-  if (zoom < 13) return;
-  features.forEach(f => {
-    const pid = f.properties.id;
-    const center = L.geoJSON(f).getBounds().getCenter();
-    const marker = L.marker(center, {
-      icon: L.divIcon({
-        html: `<span style="font-size:10px;font-weight:600;color:#fff;background:rgba(0,0,0,0.45);padding:1px 4px;border-radius:3px">${pid}</span>`,
-        className: '', iconAnchor: [16, 8]
-      })
+  const bounds = map.getBounds();
+  geojsonData.features.forEach(feat => {
+    const id = feat.properties.id;
+    const coords = getCentroid(feat.geometry);
+    if (!coords) return;
+    const latlng = L.latLng(coords[1], coords[0]);
+    if (!bounds.contains(latlng)) return;
+    if (zoom < 10 && geojsonData.features.length > 50) return;
+    if (zoom < 12 && geojsonData.features.length > 200) return;
+    const key = `${currentDistrict}:${id}`;
+    const status = getStatus(key);
+    let className = 'polygon-label';
+    if (status === 'yes') className += ' polygon-label-yes';
+    if (status === 'no') className += ' polygon-label-no';
+    const marker = L.marker(latlng, {
+      icon: L.divIcon({ className, html: `${id}`, iconSize: [24, 18], iconAnchor: [12, 9] }),
+      interactive: true,
     }).addTo(map);
+    marker.on('click', () => selectPolygon(id));
     labelMarkers.push(marker);
   });
 }
 
-map.on('zoomend', () => {
-  if (!geojsonData) return;
-  labelMarkers.forEach(m => map.removeLayer(m));
-  labelMarkers = [];
-  addLabels(geojsonData.features);
-});
+function onMapMove() { addLabels(); addDrawnLabels(); }
 
-// ---- Progress ----
-function updateProgress() {
-  if (!geojsonData) return;
-  const total = geojsonData.features.length;
-  let yes = 0, no = 0;
-  geojsonData.features.forEach(f => {
-    const r = verificationResults[`${currentDistrict}:${f.properties.id}`];
-    if (r?.status === 'yes') yes++;
-    else if (r?.status === 'no') no++;
-  });
-  const done = yes + no;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  $('#progressCount').textContent = `${done} / ${total}`;
-  $('#progressFill').style.width = `${pct}%`;
-  $('#statYes').textContent = yes;
-  $('#statNo').textContent = no;
-  $('#statPending').textContent = total - done;
-}
-
-// ---- Polygon List ----
-function renderList() {
-  if (!geojsonData) return;
-  const filter = currentFilter;
-  polygonList.innerHTML = '';
-  let visible = 0;
-
-  geojsonData.features.forEach(f => {
-    const pid = f.properties.id;
-    const key = `${currentDistrict}:${pid}`;
-    const r = verificationResults[key];
-    const status = r ? r.status : 'pending';
-
-    if (filter !== 'all' && status !== filter) return;
-    visible++;
-
-    const item = document.createElement('div');
-    item.className = `polygon-item status-${status}${pid === selectedPolygonId ? ' selected' : ''}`;
-    item.dataset.pid = pid;
-    item.innerHTML = `
-      <span class="poly-id">#${pid}</span>
-      <span class="poly-status poly-status-${status}">${status}</span>
-      ${r?.user ? `<span class="poly-user">${r.user}</span>` : ''}
-    `;
-    item.addEventListener('click', () => openVerifyPanel(pid));
-    polygonList.appendChild(item);
-  });
-
-  if (visible === 0) {
-    polygonList.innerHTML = `<div class="poly-empty">No polygons match the filter.</div>`;
+function getCentroid(geometry) {
+  let coords;
+  if (geometry.type === 'Polygon') coords = geometry.coordinates[0];
+  else if (geometry.type === 'MultiPolygon') {
+    let maxLen = 0;
+    geometry.coordinates.forEach(poly => { if (poly[0].length > maxLen) { maxLen = poly[0].length; coords = poly[0]; } });
   }
+  if (!coords || coords.length === 0) return null;
+  let sx = 0, sy = 0;
+  coords.forEach(c => { sx += c[0]; sy += c[1]; });
+  return [sx / coords.length, sy / coords.length];
 }
 
-// ---- Verify Panel ----
-function openVerifyPanel(pid) {
-  selectedPolygonId = pid;
-  const key = `${currentDistrict}:${pid}`;
-  const r = verificationResults[key];
-  const feature = geojsonData.features.find(f => f.properties.id === pid);
-
+function selectPolygon(id) {
+  selectedPolygonId = id;
+  const feat = geojsonData.features.find(f => f.properties.id === id);
+  if (!feat) return;
+  if (highlightLayer) map.removeLayer(highlightLayer);
+  highlightLayer = L.geoJSON(feat, {
+    style: { color: '#fff', weight: 4, fillColor: '#3498db', fillOpacity: 0.15, dashArray: null },
+  }).addTo(map);
+  map.fitBounds(L.geoJSON(feat).getBounds(), { padding: [60, 60], maxZoom: 18 });
   verifyPanel.classList.remove('hidden');
-  $('#verifyTitle').textContent = `Polygon #${pid}`;
+  $('#verifyTitle').textContent = `Polygon #${id}`;
+  $('#verifyArea').textContent = `${feat.properties.area_ha} ha`;
+  const key = `${currentDistrict}:${id}`;
+  const verifier = getVerifier(key);
+  const status = getStatus(key);
+  const verifiedByEl = $('#verifiedBy');
+  if (verifiedByEl) {
+    if (status && verifier) { verifiedByEl.textContent = `Verified by ${verifier}`; verifiedByEl.classList.remove('hidden'); }
+    else verifiedByEl.classList.add('hidden');
+  }
+  const toggle = $('#overlayToggle');
+  toggle.checked = true;
+  updateOverlayVisibility(true);
+  document.querySelectorAll('.poly-item').forEach(el => el.classList.remove('active'));
+  const listItem = document.querySelector(`.poly-item[data-id="${id}"]`);
+  if (listItem) { listItem.classList.add('active'); listItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  updateVerifyButtonStates(status);
+}
 
-  // Area
-  try {
-    const areaSqM = turf.area(feature);
-    const areaHa = (areaSqM / 10000).toFixed(2);
-    $('#verifyArea').textContent = `${areaHa} ha`;
-  } catch(e) { $('#verifyArea').textContent = ''; }
+function updateVerifyButtonStates(status) {
+  $('#btnYes').style.opacity = status === 'yes' ? '1' : '0.7';
+  $('#btnNo').style.opacity = status === 'no' ? '1' : '0.7';
+  if (status === 'yes') { $('#btnYes').style.outline = '3px solid #fff'; $('#btnNo').style.outline = 'none'; }
+  else if (status === 'no') { $('#btnNo').style.outline = '3px solid #fff'; $('#btnYes').style.outline = 'none'; }
+  else { $('#btnYes').style.outline = 'none'; $('#btnNo').style.outline = 'none'; $('#btnYes').style.opacity = '1'; $('#btnNo').style.opacity = '1'; }
+}
 
-  // Verified-by
-  const vb = $('#verifiedBy');
-  if (r?.user) {
-    vb.textContent = `Verified by ${r.user}`;
-    vb.classList.remove('hidden');
+$('#overlayToggle').addEventListener('change', (e) => { updateOverlayVisibility(e.target.checked); });
+
+function updateOverlayVisibility(show) {
+  if (!polygonLayer) return;
+  if (show) {
+    polygonLayer.setStyle((feat) => getPolygonStyle(feat));
+    if (highlightLayer) highlightLayer.setStyle({ fillOpacity: 0.15, opacity: 1 });
+    labelMarkers.forEach(m => m.getElement && m.getElement() && (m.getElement().style.display = ''));
   } else {
-    vb.classList.add('hidden');
+    polygonLayer.setStyle({ fillOpacity: 0, opacity: 0 });
+    if (highlightLayer) highlightLayer.setStyle({ fillOpacity: 0, opacity: 0.6, color: '#fff', weight: 2, dashArray: '4 4' });
+    labelMarkers.forEach(m => m.getElement && m.getElement() && (m.getElement().style.display = 'none'));
   }
-
-  // Highlight on map
-  if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
-  if (feature) {
-    highlightLayer = L.geoJSON(feature, {
-      style: { color: '#f59e0b', weight: 3, fillOpacity: 0 }
-    }).addTo(map);
-    const bounds = highlightLayer.getBounds();
-    if (bounds.isValid()) map.panTo(bounds.getCenter());
-  }
-
-  // Edit polygon state
-  if (editingExistingId) cancelEditExisting();
-
-  updateListSelection();
-  renderList();
 }
 
-function closeVerifyPanel() {
-  verifyPanel.classList.add('hidden');
-  selectedPolygonId = null;
-  if (highlightLayer) { map.removeLayer(highlightLayer); highlightLayer = null; }
-  if (editingExistingId) cancelEditExisting();
-  renderList();
-}
-
-// ---- Verify Actions ----
-async function verify(status) {
-  if (!selectedPolygonId || !currentDistrict) return;
-  const key = `${currentDistrict}:${selectedPolygonId}`;
-  const ts = new Date().toISOString();
-  verificationResults[key] = { status, user: currentUser, timestamp: ts };
-  saveToCloud(key, status);
-
-  refreshPolygonStyle(selectedPolygonId);
-  updateProgress();
-  renderList();
-
-  const feature = geojsonData.features.find(f => f.properties.id === selectedPolygonId);
-  const idx = geojsonData.features.indexOf(feature);
-  const next = geojsonData.features[idx + 1];
-  if (next) openVerifyPanel(next.properties.id);
-  else closeVerifyPanel();
-}
+$('#btnYes').addEventListener('click', () => verifyPolygon('yes'));
+$('#btnNo').addEventListener('click', () => verifyPolygon('no'));
+$('#btnSkip').addEventListener('click', () => navigatePolygon(1));
+$('#btnModify').addEventListener('click', () => modifyVerification());
 
 function modifyVerification() {
   if (!selectedPolygonId || !currentDistrict) return;
   const key = `${currentDistrict}:${selectedPolygonId}`;
   const existing = verificationResults[key];
-  const who = existing?.user ? ` (by ${existing.user})` : '';
-  const msg = existing
-    ? `Clear the existing "${existing.status}"${who} verification?`
-    : 'Mark this polygon as pending?';
-  if (!confirm(msg)) return;
-
+  if (!existing) { alert('This polygon has no verification to modify yet.'); return; }
+  const prevUser = typeof existing === 'object' ? existing.user : 'unknown';
+  const prevStatus = getStatus(key);
+  if (!confirm(`Marked "${prevStatus === 'yes' ? 'Coconut' : 'Not Coconut'}" by ${prevUser}.\n\nClear so you can re-mark it?`)) return;
   delete verificationResults[key];
-  saveToCloud(key, 'pending');
-  refreshPolygonStyle(selectedPolygonId);
+  saveOneVerification(key, 'pending', currentUser, new Date().toISOString());
+  polygonLayer.setStyle((feat) => getPolygonStyle(feat));
   updateProgress();
-
-  const vb = $('#verifiedBy');
-  vb.classList.add('hidden');
-  renderList();
+  renderPolygonList();
+  addLabels();
+  updateVerifyButtonStates(null);
+  const verifiedByEl = $('#verifiedBy');
+  if (verifiedByEl) verifiedByEl.classList.add('hidden');
 }
 
-// ---- Edit Existing Polygon Shape ----
-function startEditExisting() {
-  if (!selectedPolygonId || !geojsonData) return;
-  const feature = geojsonData.features.find(f => f.properties.id === selectedPolygonId);
-  if (!feature) return;
+$('#closeVerify').addEventListener('click', () => {
+  verifyPanel.classList.add('hidden');
+  selectedPolygonId = null;
+  if (highlightLayer) map.removeLayer(highlightLayer);
+});
 
-  editingExistingId = selectedPolygonId;
+$('#btnPrev').addEventListener('click', () => navigatePolygon(-1));
+$('#btnNext').addEventListener('click', () => navigatePolygon(1));
 
-  // Clone original geometry for cancel
-  editingExistingOrigGeom = JSON.parse(JSON.stringify(feature.geometry));
-
-  // Create editable layer
-  editingExistingLayer = L.geoJSON(feature, {
-    style: { color: '#f59e0b', weight: 2.5, fillColor: '#fbbf24', fillOpacity: 0.25 }
-  }).addTo(map);
-
-  // Enable editing on all layers
-  editingExistingLayer.eachLayer(l => {
-    if (l.editing) l.editing.enable();
-  });
-
-  // Update verify panel buttons
-  const actionsDiv = $('.verify-actions');
-  if (actionsDiv) {
-    actionsDiv.innerHTML = `
-      <button class="btn btn-primary" id="btnSaveEdit">Save Shape</button>
-      <button class="btn btn-outline" id="btnCancelEdit">Cancel</button>
-    `;
-    $('#btnSaveEdit').addEventListener('click', saveEditExisting);
-    $('#btnCancelEdit').addEventListener('click', cancelEditExisting);
-  }
+function verifyPolygon(status) {
+  if (!selectedPolygonId || !currentDistrict) return;
+  if (!currentUser) { promptUserName(); return; }
+  const key = `${currentDistrict}:${selectedPolygonId}`;
+  verificationResults[key] = { status, user: currentUser, timestamp: new Date().toISOString() };
+  saveOneVerification(key, status, currentUser, new Date().toISOString());
+  polygonLayer.setStyle((feat) => getPolygonStyle(feat));
+  updateProgress();
+  renderPolygonList();
+  addLabels();
+  updateVerifyButtonStates(status);
+  const verifiedByEl = $('#verifiedBy');
+  if (verifiedByEl) { verifiedByEl.textContent = `Verified by ${currentUser}`; verifiedByEl.classList.remove('hidden'); }
+  setTimeout(() => navigatePolygon(1), 300);
 }
 
-function saveEditExisting() {
-  if (!editingExistingId || !editingExistingLayer) return;
-  const feature = geojsonData.features.find(f => f.properties.id === editingExistingId);
-  if (!feature) { cancelEditExisting(); return; }
-
-  let newCoords = null;
-  editingExistingLayer.eachLayer(l => {
-    if (l.editing) l.editing.disable();
-    newCoords = l.toGeoJSON().geometry;
-  });
-
-  if (newCoords) {
-    feature.geometry = newCoords;
-  }
-
-  map.removeLayer(editingExistingLayer);
-  editingExistingLayer = null;
-  editingExistingId = null;
-  editingExistingOrigGeom = null;
-
-  renderPolygons(geojsonData.features);
-  openVerifyPanel(selectedPolygonId);
+function navigatePolygon(direction) {
+  if (!geojsonData) return;
+  const features = getFilteredFeatures();
+  if (features.length === 0) return;
+  let currentIdx = features.findIndex(f => f.properties.id === selectedPolygonId);
+  let nextIdx = currentIdx === -1 ? 0 : currentIdx + direction;
+  if (nextIdx >= features.length) nextIdx = 0;
+  if (nextIdx < 0) nextIdx = features.length - 1;
+  selectPolygon(features[nextIdx].properties.id);
 }
 
-function cancelEditExisting() {
-  if (!editingExistingId || !editingExistingLayer) return;
-
-  editingExistingLayer.eachLayer(l => {
-    if (l.editing) l.editing.disable();
-  });
-  map.removeLayer(editingExistingLayer);
-  editingExistingLayer = null;
-
-  const feature = geojsonData.features.find(f => f.properties.id === editingExistingId);
-  if (feature && editingExistingOrigGeom) {
-    feature.geometry = editingExistingOrigGeom;
-  }
-
-  editingExistingId = null;
-  editingExistingOrigGeom = null;
-
-  openVerifyPanel(selectedPolygonId);
-}
-
-// ---- Drawn Polygons ----
-function initDrawControl() {
-  if (drawControl) return;
-  drawControl = new L.Control.Draw({
-    draw: {
-      polygon: { shapeOptions: { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2 }, showArea: true },
-      polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
-    },
-    edit: false
-  });
-  map.addControl(drawControl);
-
-  map.on(L.Draw.Event.CREATED, (e) => {
-    const layer = e.layer;
-    const geojson = layer.toGeoJSON();
-    const areaSqM = turf.area(geojson);
-    const areaHa = (areaSqM / 10000).toFixed(3);
-
-    // Check for overlaps with existing district polygons
-    let overlapsExisting = [];
-    if (geojsonData) {
-      geojsonData.features.forEach(f => {
-        try {
-          const inter = turf.intersect(geojson, f);
-          if (inter) {
-            const interArea = turf.area(inter);
-            const pct = Math.round((interArea / areaSqM) * 100);
-            if (pct > 1) overlapsExisting.push({ id: f.properties.id, pct });
-          }
-        } catch(err) {}
-      });
-    }
-
-    // Check overlaps with other drawn polygons (same district)
-    let overlapsDrawn = [];
-    drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
-      try {
-        const pGeojson = { type: 'Feature', geometry: p.geometry };
-        const inter = turf.intersect(geojson, pGeojson);
-        if (inter) {
-          const interArea = turf.area(inter);
-          const pct = Math.round((interArea / areaSqM) * 100);
-          if (pct > 1) overlapsDrawn.push({ id: p.id, pct });
-        }
-      } catch(err) {}
-    });
-
-    const proceed = () => {
-      const id = `drawn_${Date.now()}`;
-      const note = prompt('Add a note for this polygon (optional):') || '';
-      const polygon = {
-        id,
-        district: currentDistrict,
-        geometry: geojson.geometry,
-        area_ha: parseFloat(areaHa),
-        user: currentUser,
-        timestamp: new Date().toISOString(),
-        note,
-        overlaps_existing: overlapsExisting
-      };
-      drawnPolygons.push(polygon);
-      saveDrawnToCloud(polygon);
-      addDrawnToMap(polygon);
-      renderDrawnList();
-      updateDrawnBadge();
-      expandDrawnPanel();
-    };
-
-    if (overlapsExisting.length > 0 || overlapsDrawn.length > 0) {
-      let msg = 'Warning: This polygon overlaps with:\n';
-      if (overlapsExisting.length > 0)
-        msg += `Existing polygons: ${overlapsExisting.map(o => `#${o.id} (${o.pct}%)`).join(', ')}\n`;
-      if (overlapsDrawn.length > 0)
-        msg += `New polygons: ${overlapsDrawn.map(o => `#${o.id} (${o.pct}%)`).join(', ')}`;
-      msg += '\n\nSave anyway?';
-      if (confirm(msg)) proceed();
-    } else {
-      proceed();
-    }
+function getFilteredFeatures() {
+  if (!geojsonData) return [];
+  return geojsonData.features.filter(f => {
+    if (currentFilter === 'all') return true;
+    const key = `${currentDistrict}:${f.properties.id}`;
+    const status = getStatus(key) || 'pending';
+    return status === currentFilter || (currentFilter === 'pending' && !getStatus(key));
   });
 }
 
-function addDrawnToMap(polygon) {
-  if (drawnLayer && map.hasLayer(drawnLayer) && drawnLayerMap[polygon.id]) {
-    map.removeLayer(drawnLayerMap[polygon.id].layer);
-    if (drawnLayerMap[polygon.id].label) map.removeLayer(drawnLayerMap[polygon.id].label);
-  }
-
-  const layer = L.geoJSON({ type: 'Feature', geometry: polygon.geometry }, {
-    pane: 'drawnPane',
-    style: { color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.12 }
-  }).addTo(map);
-
-  // Small label
-  let labelMarker = null;
-  try {
-    const center = layer.getBounds().getCenter();
-    labelMarker = L.marker(center, {
-      pane: 'drawnLabelPane',
-      icon: L.divIcon({
-        html: `<span style="font-size:9px;font-weight:700;color:#1d4ed8;background:rgba(255,255,255,0.75);padding:1px 3px;border-radius:3px;white-space:nowrap">NEW</span>`,
-        className: '', iconAnchor: [12, 6]
-      })
-    }).addTo(map);
-  } catch(e) {}
-
-  drawnLayerMap[polygon.id] = { layer, label: labelMarker };
-}
-
-function addDrawnLabels() {}
-
-function renderDrawnPolygons() {
-  // Remove all drawn layers
-  Object.values(drawnLayerMap).forEach(({ layer, label }) => {
-    if (layer && map.hasLayer(layer)) map.removeLayer(layer);
-    if (label && map.hasLayer(label)) map.removeLayer(label);
-  });
-  drawnLayerMap = {};
-
-  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => addDrawnToMap(p));
-  renderDrawnList();
-}
-
-function renderDrawnList() {
-  const list = $('#drawnPolygonList');
-  const empty = $('#drawnEmpty');
-  if (!list) return;
-
-  const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
-
-  if (districtPolys.length === 0) {
-    list.innerHTML = '';
-    if (empty) { empty.style.display = ''; list.appendChild(empty); }
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-
-  list.innerHTML = '';
-  districtPolys.forEach(p => {
-    const card = document.createElement('div');
-    card.className = `drawn-card${editingDrawnId === p.id ? ' editing' : ''}`;
-    card.innerHTML = `
-      <div class="drawn-card-header">
-        <span class="drawn-card-id">NEW • ${p.area_ha} ha</span>
-        <span class="drawn-card-user">${p.user || ''}</span>
-      </div>
-      ${p.note ? `<div class="drawn-card-note">${p.note}</div>` : ''}
-      <div class="drawn-card-actions">
-        <button class="btn btn-sm drawn-btn-zoom" data-id="${p.id}">Zoom</button>
-        <button class="btn btn-sm drawn-btn-edit" data-id="${p.id}">${editingDrawnId === p.id ? 'Save' : 'Edit'}</button>
-        <button class="btn btn-sm drawn-btn-delete" data-id="${p.id}">Delete</button>
-      </div>
-    `;
-    list.appendChild(card);
-  });
-
-  list.querySelectorAll('.drawn-btn-zoom').forEach(btn => {
-    btn.addEventListener('click', () => zoomDrawn(btn.dataset.id));
-  });
-  list.querySelectorAll('.drawn-btn-edit').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (editingDrawnId === btn.dataset.id) saveEditDrawn(btn.dataset.id);
-      else startEditDrawn(btn.dataset.id);
-    });
-  });
-  list.querySelectorAll('.drawn-btn-delete').forEach(btn => {
-    btn.addEventListener('click', () => deleteDrawn(btn.dataset.id));
+function renderPolygonList() {
+  if (!geojsonData) return;
+  const features = getFilteredFeatures();
+  polygonList.innerHTML = features.map(f => {
+    const id = f.properties.id;
+    const key = `${currentDistrict}:${id}`;
+    const status = getStatus(key);
+    const verifier = getVerifier(key);
+    const isActive = id === selectedPolygonId;
+    let statusClass = 's-pending', statusText = 'Pending', itemClass = '';
+    if (status === 'yes') { statusClass = 's-yes'; statusText = 'Coconut'; itemClass = 'verified-yes'; }
+    if (status === 'no') { statusClass = 's-no'; statusText = 'Not Coconut'; itemClass = 'verified-no'; }
+    const verifierHtml = verifier ? `<div class="poly-verifier">by ${verifier}</div>` : '';
+    return `<div class="poly-item ${itemClass} ${isActive ? 'active' : ''}" data-id="${id}">
+      <div class="poly-num">${id}</div>
+      <div><div style="font-weight:500">#${id}</div><div class="poly-meta">${f.properties.area_ha} ha</div></div>
+      <div style="text-align:right;margin-left:auto"><span class="poly-status ${statusClass}">${statusText}</span>${verifierHtml}</div>
+    </div>`;
+  }).join('');
+  polygonList.querySelectorAll('.poly-item').forEach(el => {
+    el.addEventListener('click', () => selectPolygon(parseInt(el.dataset.id)));
   });
 }
 
-function zoomDrawn(id) {
-  const entry = drawnLayerMap[id];
-  if (entry?.layer) {
-    const bounds = entry.layer.getBounds();
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
-  }
-}
-
-function startEditDrawn(id) {
-  if (editingDrawnId) saveEditDrawn(editingDrawnId);
-
-  editingDrawnId = id;
-  const entry = drawnLayerMap[id];
-  if (!entry) return;
-
-  editingLeafletLayer = entry.layer;
-  editingLeafletLayer.eachLayer(l => {
-    if (l.editing) l.editing.enable();
-    l.setStyle({ color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 0.25 });
-  });
-  renderDrawnList();
-}
-
-function saveEditDrawn(id) {
-  const entry = drawnLayerMap[id];
-  if (!entry) { editingDrawnId = null; editingLeafletLayer = null; renderDrawnList(); return; }
-
-  let newGeom = null;
-  entry.layer.eachLayer(l => {
-    if (l.editing) l.editing.disable();
-    newGeom = l.toGeoJSON().geometry;
-    l.setStyle({ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.12 });
-  });
-
-  const poly = drawnPolygons.find(p => p.id === id);
-  if (poly && newGeom) {
-    poly.geometry = newGeom;
-    poly.area_ha = parseFloat((turf.area({ type: 'Feature', geometry: newGeom }) / 10000).toFixed(3));
-    saveDrawnToCloud(poly);
-  }
-
-  editingDrawnId = null;
-  editingLeafletLayer = null;
-  renderDrawnList();
-}
-
-function deleteDrawn(id) {
-  if (!confirm('Delete this drawn polygon?')) return;
-  const poly = drawnPolygons.find(p => p.id === id);
-  if (poly) deleteDrawnFromCloud(poly);
-
-  const entry = drawnLayerMap[id];
-  if (entry) {
-    if (entry.layer && map.hasLayer(entry.layer)) map.removeLayer(entry.layer);
-    if (entry.label && map.hasLayer(entry.label)) map.removeLayer(entry.label);
-    delete drawnLayerMap[id];
-  }
-
-  drawnPolygons = drawnPolygons.filter(p => p.id !== id);
-  if (editingDrawnId === id) { editingDrawnId = null; editingLeafletLayer = null; }
-  renderDrawnList();
-  updateDrawnBadge();
-}
-
-// ---- Cloud Sync ----
-async function loadFromCloud() {
-  updateSyncUI('connecting');
-  try {
-    const res = await fetch(`${GSHEET_API}?action=getAll`);
-    const data = await res.json();
-    if (data.verifications) {
-      Object.entries(data.verifications).forEach(([key, val]) => {
-        if (val.status && val.status !== 'pending') {
-          verificationResults[key] = val;
-        }
-      });
-    }
-    if (data.drawnPolygons) {
-      drawnPolygons = data.drawnPolygons;
-    }
-    updateSyncUI('synced');
-    if (currentDistrict) {
-      renderPolygons(geojsonData.features);
-      updateProgress();
-      renderList();
-      renderDrawnPolygons();
-    }
-  } catch(e) {
-    updateSyncUI('error');
-  }
-}
-
-async function saveToCloud(key, status) {
-  if (isSaving) return;
-  isSaving = true;
-  updateSyncUI('saving');
-  try {
-    await fetch(GSHEET_API, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'saveVerification',
-        key, status,
-        user: currentUser,
-        timestamp: new Date().toISOString()
-      }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    updateSyncUI('synced');
-  } catch(e) {
-    updateSyncUI('error');
-  } finally {
-    isSaving = false;
-  }
-}
-
-async function saveDrawnToCloud(polygon) {
-  try {
-    await fetch(GSHEET_API, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'saveDrawnPolygon', ...polygon }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch(e) {}
-}
-
-async function deleteDrawnFromCloud(polygon) {
-  try {
-    await fetch(GSHEET_API, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'deleteDrawnPolygon', id: polygon.id, district: polygon.district }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch(e) {}
-}
-
-function updateSyncUI(state) {
-  const indicator = $('#syncIndicator');
-  if (!indicator) return;
-  const dot = indicator.querySelector('.sync-dot');
-  const text = indicator.querySelector('.sync-text');
-  const states = {
-    connecting: ['dot-connecting', 'Connecting...'],
-    synced:     ['dot-synced',     'Synced'],
-    saving:     ['dot-saving',     'Saving...'],
-    error:      ['dot-error',      'Offline']
-  };
-  const [cls, label] = states[state] || states.error;
-  if (dot) { dot.className = `sync-dot ${cls}`; }
-  if (text) text.textContent = label;
-}
-
-// ---- Helpers ----
-function refreshPolygonStyle(pid) {
-  if (!polygonLayer) return;
-  polygonLayer.eachLayer(layer => {
-    if (layer.feature?.properties?.id === pid) {
-      layer.setStyle(stylePolygon(layer.feature));
-    }
-  });
-}
-
-function updateListSelection() {
-  document.querySelectorAll('.polygon-item').forEach(el => {
-    el.classList.toggle('selected', el.dataset.pid == selectedPolygonId);
-  });
-}
-
-// ---- Export ----
-function exportCSV(districtName, features) {
-  const rows = [['polygon_id', 'status', 'verified_by', 'timestamp', 'area_ha']];
-  features.forEach(f => {
-    const pid = f.properties.id;
-    const key = `${districtName}:${pid}`;
-    const r = verificationResults[key];
-    let areaHa = '';
-    try { areaHa = (turf.area(f) / 10000).toFixed(3); } catch(e) {}
-    rows.push([pid, r?.status || 'pending', r?.user || '', r?.timestamp || '', areaHa]);
-  });
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  download(`${districtName}_verification.csv`, csv, 'text/csv');
-}
-
-function exportGeoJSON(districtName, features) {
-  const enriched = features.map(f => {
-    const key = `${districtName}:${f.properties.id}`;
-    const r = verificationResults[key];
-    return { ...f, properties: { ...f.properties, status: r?.status || 'pending', verified_by: r?.user || '', timestamp: r?.timestamp || '' } };
-  });
-  const fc = JSON.stringify({ type: 'FeatureCollection', features: enriched }, null, 2);
-  download(`${districtName}_verification.geojson`, fc, 'application/json');
-}
-
-async function exportAllCSV() {
-  const districts = Object.keys(districtIndex);
-  const rows = [['district', 'polygon_id', 'status', 'verified_by', 'timestamp', 'area_ha']];
-  for (const d of districts) {
-    try {
-      const res = await fetch(`./data/${districtIndex[d].file}`);
-      const gj = await res.json();
-      gj.features.forEach(f => {
-        const pid = f.properties.id;
-        const key = `${d}:${pid}`;
-        const r = verificationResults[key];
-        let areaHa = '';
-        try { areaHa = (turf.area(f) / 10000).toFixed(3); } catch(e) {}
-        rows.push([d, pid, r?.status || 'pending', r?.user || '', r?.timestamp || '', areaHa]);
-      });
-    } catch(e) {}
-  }
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  download('all_districts_verification.csv', csv, 'text/csv');
-}
-
-async function exportAllGeoJSON() {
-  const districts = Object.keys(districtIndex);
-  const allFeatures = [];
-  for (const d of districts) {
-    try {
-      const res = await fetch(`./data/${districtIndex[d].file}`);
-      const gj = await res.json();
-      gj.features.forEach(f => {
-        const key = `${d}:${f.properties.id}`;
-        const r = verificationResults[key];
-        allFeatures.push({ ...f, properties: { district: d, ...f.properties, status: r?.status || 'pending', verified_by: r?.user || '', timestamp: r?.timestamp || '' } });
-      });
-    } catch(e) {}
-  }
-  const fc = JSON.stringify({ type: 'FeatureCollection', features: allFeatures }, null, 2);
-  download('all_districts_verification.geojson', fc, 'application/json');
-}
-
-function download(filename, content, type) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type }));
-  a.download = filename;
-  a.click();
-}
-
-// ---- Filter Buttons ----
 document.querySelectorAll('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentFilter = btn.dataset.filter;
-    renderList();
+    renderPolygonList();
   });
 });
 
-// ---- District Select ----
-districtSelect.addEventListener('change', () => {
-  const d = districtSelect.value;
-  if (d) loadDistrict(d);
-});
+const refreshBtn = $('#refreshBtn');
+if (refreshBtn) {
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing...';
+    await loadFromCloud();
+    if (currentDistrict && geojsonData) {
+      polygonLayer.setStyle((feat) => getPolygonStyle(feat));
+      renderPolygonList(); updateProgress(); addLabels();
+    }
+    refreshBtn.disabled = false; refreshBtn.textContent = 'Refresh';
+  });
+}
 
-// ---- Verify Panel Buttons ----
-$('#btnYes').addEventListener('click',  () => verify('yes'));
-$('#btnNo').addEventListener('click',   () => verify('no'));
-$('#btnSkip').addEventListener('click', closeVerifyPanel);
-$('#btnModify').addEventListener('click', modifyVerification);
-$('#closeVerify').addEventListener('click', closeVerifyPanel);
+function updateProgress() {
+  if (!geojsonData || !currentDistrict) return;
+  const total = geojsonData.features.length;
+  let yes = 0, no = 0;
+  geojsonData.features.forEach(f => {
+    const st = getStatus(`${currentDistrict}:${f.properties.id}`);
+    if (st === 'yes') yes++; if (st === 'no') no++;
+  });
+  const done = yes + no;
+  $('#progressCount').textContent = `${done} / ${total}`;
+  $('#progressFill').style.width = `${total > 0 ? (done / total * 100).toFixed(1) : 0}%`;
+  $('#statYes').textContent = yes;
+  $('#statNo').textContent = no;
+  $('#statPending').textContent = total - done;
+}
 
-$('#btnPrev').addEventListener('click', () => {
-  if (!selectedPolygonId || !geojsonData) return;
-  const features = geojsonData.features;
-  const idx = features.findIndex(f => f.properties.id === selectedPolygonId);
-  if (idx > 0) openVerifyPanel(features[idx - 1].properties.id);
-});
-
-$('#btnNext').addEventListener('click', () => {
-  if (!selectedPolygonId || !geojsonData) return;
-  const features = geojsonData.features;
-  const idx = features.findIndex(f => f.properties.id === selectedPolygonId);
-  if (idx < features.length - 1) openVerifyPanel(features[idx + 1].properties.id);
-});
-
-// ---- Overlay Toggle ----
-$('#overlayToggle').addEventListener('change', (e) => {
-  if (!polygonLayer) return;
-  if (e.target.checked) map.addLayer(polygonLayer);
-  else map.removeLayer(polygonLayer);
-});
-
-// ---- Keyboard Shortcuts ----
-document.addEventListener('keydown', (e) => {
-  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
-  if (e.key === 'y' || e.key === 'Y') { if (!verifyPanel.classList.contains('hidden')) verify('yes'); }
-  if (e.key === 'n' || e.key === 'N') { if (!verifyPanel.classList.contains('hidden')) verify('no'); }
-  if (e.key === ' ') { e.preventDefault(); if (!verifyPanel.classList.contains('hidden')) closeVerifyPanel(); }
-  if (e.key === 'Escape') closeVerifyPanel();
-  if (e.key === 'M' || e.key === 'm') { if (!verifyPanel.classList.contains('hidden')) modifyVerification(); }
-  if (e.key === 'ArrowRight') $('#btnNext')?.click();
-  if (e.key === 'ArrowLeft')  $('#btnPrev')?.click();
-});
-
-// ---- Export Buttons ----
 $('#exportBtn').addEventListener('click', () => {
-  if (currentDistrict && geojsonData) exportCSV(currentDistrict, geojsonData.features);
+  if (!geojsonData || !currentDistrict) return;
+  let csv = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n';
+  geojsonData.features.forEach(f => {
+    const id = f.properties.id, key = `${currentDistrict}:${id}`;
+    const status = getStatus(key) || 'pending', verifier = getVerifier(key);
+    const entry = verificationResults[key], ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
+    const centroid = getCentroid(f.geometry);
+    csv += `"${currentDistrict}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}",training_label\n`;
+  });
+  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
+    const centroid = getCentroid(p.geometry);
+    csv += `"${currentDistrict}",${p.id},${p.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},user_drawn,"${p.user}","${p.timestamp}",user_drawn\n`;
+  });
+  downloadFile(csv, `coconut_verification_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.csv`, 'text/csv');
 });
+
 $('#exportJsonBtn').addEventListener('click', () => {
-  if (currentDistrict && geojsonData) exportGeoJSON(currentDistrict, geojsonData.features);
-});
-$('#exportAllBtn').addEventListener('click', exportAllCSV);
-$('#exportAllGeoBtn').addEventListener('click', exportAllGeoJSON);
-
-// ---- Refresh ----
-$('#refreshBtn').addEventListener('click', () => loadFromCloud().then(() => { if (currentDistrict) renderPolygons(geojsonData.features); }));
-
-// ---- Draw Button ----
-$('#drawBtn').addEventListener('click', () => {
-  initDrawControl();
-  // Simulate click on the polygon draw button in leaflet.draw
-  const drawBtn = document.querySelector('.leaflet-draw-draw-polygon');
-  if (drawBtn) drawBtn.click();
+  if (!geojsonData || !currentDistrict) return;
+  const output = JSON.parse(JSON.stringify(geojsonData));
+  output.features.forEach(f => {
+    const key = `${currentDistrict}:${f.properties.id}`;
+    f.properties.verification = getStatus(key) || 'pending';
+    f.properties.verified_by = getVerifier(key);
+    f.properties.source = 'training_label';
+  });
+  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
+    output.features.push({ type: 'Feature', geometry: p.geometry, properties: { id: p.id, area_ha: p.area_ha, note: p.note, user: p.user, timestamp: p.timestamp, source: 'user_drawn' } });
+  });
+  downloadFile(JSON.stringify(output, null, 2), `coconut_verified_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.geojson`, 'application/json');
 });
 
-// ---- Drawn Panel Toggle ----
-$('#drawnToggleBtn').addEventListener('click', () => {
-  const body = $('#drawnBody');
-  const chevron = $('#drawnChevron');
-  const btn = $('#drawnToggleBtn');
-  const isOpen = btn.getAttribute('aria-expanded') === 'true';
-  body.style.display = isOpen ? 'none' : '';
-  btn.setAttribute('aria-expanded', String(!isOpen));
-  if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+function downloadFile(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+$('#exportAllBtn').addEventListener('click', () => exportAllDistricts('csv'));
+$('#exportAllGeoBtn').addEventListener('click', () => exportAllDistricts('geojson'));
+
+async function exportAllDistricts(format) {
+  const btn = format === 'csv' ? $('#exportAllBtn') : $('#exportAllGeoBtn');
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Loading all districts...';
+  try {
+    await loadFromCloud();
+    const districtNames = Object.keys(districtIndex).sort();
+    const allFeatures = [], csvRows = [];
+    let totalPolygons = 0, verified = 0, yesCount = 0, noCount = 0;
+    for (let i = 0; i < districtNames.length; i++) {
+      const dName = districtNames[i], info = districtIndex[dName];
+      btn.textContent = `Loading ${dName}... (${i + 1}/${districtNames.length})`;
+      const gj = await (await fetch(info.file)).json();
+      gj.features.forEach(f => {
+        const id = f.properties.id, key = `${dName}:${id}`;
+        const status = getStatus(key) || 'pending', verifier = getVerifier(key);
+        const entry = verificationResults[key], ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
+        const centroid = getCentroid(f.geometry);
+        totalPolygons++; if (status === 'yes' || status === 'no') verified++;
+        if (status === 'yes') yesCount++; if (status === 'no') noCount++;
+        if (format === 'csv') {
+          csvRows.push(`"${dName}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}",training_label`);
+        } else {
+          const feat = JSON.parse(JSON.stringify(f));
+          feat.properties = { ...feat.properties, district: dName, verification: status, verified_by: verifier, verification_timestamp: ts, source: 'training_label' };
+          allFeatures.push(feat);
+        }
+      });
+    }
+    drawnPolygons.forEach(p => {
+      const centroid = getCentroid(p.geometry);
+      if (format === 'csv') {
+        csvRows.push(`"${p.district}",${p.id},${p.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},user_drawn,"${p.user}","${p.timestamp}",user_drawn`);
+      } else {
+        allFeatures.push({ type: 'Feature', geometry: p.geometry, properties: { district: p.district, id: p.id, area_ha: p.area_ha, verification: 'user_drawn', verified_by: p.user, verification_timestamp: p.timestamp, note: p.note, source: 'user_drawn' } });
+      }
+    });
+    const timestamp = new Date().toISOString().slice(0, 10);
+    if (format === 'csv') {
+      const summary = [`# Coconut Verification Export - Tamil Nadu 2020`,`# Date: ${new Date().toISOString()}`,`# Total Polygons: ${totalPolygons}`,`# Verified: ${verified} (${(verified/totalPolygons*100).toFixed(1)}%)`,`# Coconut (Yes): ${yesCount}`,`# Not Coconut (No): ${noCount}`,`# Pending: ${totalPolygons - verified}`,`# Drawn Polygons: ${drawnPolygons.length}`,`#`].join('\n');
+      downloadFile(summary + '\nDistrict,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n' + csvRows.join('\n') + '\n', `coconut_verification_all_districts_${timestamp}.csv`, 'text/csv');
+    } else {
+      downloadFile(JSON.stringify({ type: 'FeatureCollection', properties: { name: 'Coconut Verification - Tamil Nadu 2020', exportDate: new Date().toISOString(), totalPolygons, verified, coconut: yesCount, notCoconut: noCount, pending: totalPolygons - verified, drawnPolygons: drawnPolygons.length }, features: allFeatures }), `coconut_verification_all_districts_${timestamp}.geojson`, 'application/json');
+    }
+    btn.textContent = `Done! ${totalPolygons} polygons exported`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+  } catch (e) {
+    console.error('Export all failed:', e);
+    btn.textContent = 'Export failed - try again';
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if ($('#userModal') && !$('#userModal').classList.contains('hidden')) return;
+  if (!verifyPanel.classList.contains('hidden')) {
+    if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); verifyPolygon('yes'); }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); verifyPolygon('no'); }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); modifyVerification(); }
+    if (e.key === 's' || e.key === 'S' || e.key === ' ') { e.preventDefault(); navigatePolygon(1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); navigatePolygon(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePolygon(-1); }
+    if (e.key === 't' || e.key === 'T') {
+      e.preventDefault();
+      const toggle = $('#overlayToggle');
+      toggle.checked = !toggle.checked;
+      updateOverlayVisibility(toggle.checked);
+    }
+    if (e.key === 'Escape') { verifyPanel.classList.add('hidden'); selectedPolygonId = null; if (highlightLayer) map.removeLayer(highlightLayer); }
+  }
 });
 
-// ---- Guide Panel ----
-$('#guideToggle').addEventListener('click', () => {
-  const panel = $('#guidePanel');
-  panel.classList.toggle('hidden');
-});
-$('#closeGuide').addEventListener('click', () => {
-  $('#guidePanel').classList.add('hidden');
-});
+setInterval(async () => {
+  if (!isSaving) {
+    await loadFromCloud();
+    if (currentDistrict && geojsonData) {
+      polygonLayer.setStyle((feat) => getPolygonStyle(feat));
+      updateProgress();
+      renderDrawnPolygonsOnMap();
+      renderDrawnPolygonList();
+    }
+  }
+}, 60000);
 
-// ---- User Modal ----
-$('#userNameSubmit').addEventListener('click', () => {
-  const val = $('#userName').value.trim();
-  if (!val) return;
-  currentUser = val;
-  $('#currentUserDisplay').textContent = val;
-  $('#userModal').style.display = 'none';
-  loadFromCloud();
-});
-$('#userName').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') $('#userNameSubmit').click();
-});
+init();
 
-// ---- Init ----
-loadDistrictIndex();
+(function() {
+  var guideBtn = document.getElementById('guideToggle');
+  var guidePanel = document.getElementById('guidePanel');
+  var closeGuide = document.getElementById('closeGuide');
+  if (guideBtn && guidePanel) {
+    guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
+    closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
+  }
+})();

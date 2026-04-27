@@ -88,20 +88,11 @@
       <div class="polygon-list" id="polygonList"></div>
     </div>
 
-    <!-- New Polygons -->
-    <div class="drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
-      <button class="drawn-toggle-btn" id="drawnToggleBtn" aria-expanded="false">
-        <span class="drawn-toggle-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-          New Polygons
-        </span>
-        <span class="drawn-count-badge" id="drawnCountBadge">0</span>
-        <svg class="drawn-chevron" id="drawnChevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-      </button>
-      <div class="drawn-body" id="drawnBody">
-        <div class="drawn-polygon-list" id="drawnPolygonList">
-          <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
-        </div>
+    <!-- New Polygons (user-drawn) -->
+    <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
+      <label class="field-label">New Polygons</label>
+      <div class="drawn-polygon-list" id="drawnPolygonList">
+        <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
       </div>
     </div>
 
@@ -199,28 +190,40 @@
               <span class="guide-cap">Chennai — Urban tree cover near housing</span>
             </div>
             <div class="guide-card guide-card-no">
-              <img src="docs/no_3_villupuram.png" alt="Sparse trees, not coconut" loading="lazy" />
-              <span class="guide-cap">Villupuram — Sparse trees, wide spacing</span>
+              <img src="docs/no_3_ariyalur.png" alt="Cropland" loading="lazy" />
+              <span class="guide-cap">Ariyalur — Cropland, harvested fields</span>
             </div>
             <div class="guide-card guide-card-no">
-              <img src="docs/no_4_ariyalur.png" alt="Mixed vegetation" loading="lazy" />
-              <span class="guide-cap">Ariyalur — Mixed vegetation, irregular shape</span>
+              <img src="docs/no_4_villupuram.png" alt="Barren land" loading="lazy" />
+              <span class="guide-cap">Villupuram — Barren / fallow agricultural land</span>
             </div>
           </div>
           <div class="guide-tip guide-tip-no">
-            Irregular crown shapes &bull; Mixed species, no grid &bull; Very dark or very light green &bull; Dense canopy with no gaps
+            Irregular canopy, no spacing &bull; Mixed tree species &bull; Cropland or barren fields &bull; Urban buildings/roads visible
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Draw Button -->
-    <button class="draw-fab" id="drawBtn" style="display:none" title="Draw new polygon">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-      Draw New Polygon
-    </button>
+    <!-- Loading Spinner -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+      <div class="spinner"></div>
+      <p>Loading polygons...</p>
+    </div>
   </div>
 
   <script src="app.js"></script>
+
+  <script>
+  (function() {
+    var guideBtn = document.getElementById('guideToggle');
+    var guidePanel = document.getElementById('guidePanel');
+    var closeGuide = document.getElementById('closeGuide');
+    if (guideBtn && guidePanel) {
+      guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
+      closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
+    }
+  })();
+  </script>
 </body>
 </html>
