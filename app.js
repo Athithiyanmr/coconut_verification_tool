@@ -6,8 +6,10 @@
 // ---- Cloud Config ----
 const GSHEET_API = 'https://script.google.com/macros/s/AKfycbw2Qgfv7U-gG39a4Z1uvrf_5ZFQnZnj6QMmgj4zmSNTsXobCHKpzRi_ClQBl_vJ0ZZV/exec';
 
+// ---- Google Form for worker registration ----
+const WORKER_FORM_URL = 'https://forms.gle/YOUR_FORM_ID_HERE'; // <-- replace with your real form URL
+
 // ---- ADMIN CONFIG ----
-// Any name in this list gets full unrestricted access (case-insensitive)
 const ADMIN_NAMES = ['athithiyan'];
 
 function isAdmin(name) {
@@ -30,7 +32,7 @@ let districtBoundaries = null;
 let boundaryLayer = null;
 
 // Worker assignment
-let workerAssignment = null; // { district, assignedStart, assignedEnd, capacity, timePerDay }
+let workerAssignment = null;
 
 // Drawn polygons state
 let drawnPolygons = [];
@@ -86,7 +88,6 @@ async function loadFromCloud() {
   } catch (e) { console.warn('Cloud load failed:', e); setSyncStatus('error'); return false; }
 }
 
-// ---- Fetch worker assignment by name ----
 async function fetchWorkerAssignment(name) {
   try {
     const res = await fetch(`${GSHEET_API}?action=getWorker&name=${encodeURIComponent(name)}`);
@@ -431,31 +432,30 @@ function promptUserName() {
   const btn = $('#userNameSubmit');
   const statusEl = $('#userLoginStatus');
 
+  // Inject form link into modal if not already present
+  const formLinkEl = document.getElementById('workerFormLink');
+  if (formLinkEl && WORKER_FORM_URL && WORKER_FORM_URL !== 'https://forms.gle/YOUR_FORM_ID_HERE') {
+    formLinkEl.style.display = '';
+  }
+
   if (input && btn) {
     const submit = async () => {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
 
-      // ============================================================
-      // ADMIN CHECK — Athithiyan bypasses all worker restrictions
-      // ============================================================
+      // ADMIN CHECK
       if (isAdmin(name)) {
         currentUser = name;
-        workerAssignment = null; // no restriction
+        workerAssignment = null;
         modal.classList.add('hidden');
         if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
-
-        // Show admin badge
         showAdminBadge();
-
-        // Unlock district dropdown fully
         if (districtSelect) districtSelect.disabled = false;
-
         if (statusEl) statusEl.classList.add('hidden');
         return;
       }
 
-      // ---- Regular worker flow ----
+      // Regular worker flow
       btn.disabled = true;
       btn.textContent = 'Looking up assignment…';
       if (statusEl) { statusEl.className = 'login-status login-status-loading'; statusEl.textContent = 'Checking worker registration…'; statusEl.classList.remove('hidden'); }
@@ -492,7 +492,6 @@ function promptUserName() {
   }
 }
 
-// ---- Admin badge ----
 function showAdminBadge() {
   const badge = $('#assignmentBadge');
   const text = $('#assignmentText');
@@ -516,15 +515,13 @@ async function applyWorkerAssignment(assignment) {
   const distName = assignment.district;
   if (districtSelect) {
     districtSelect.value = distName;
-    districtSelect.disabled = true; // lock for workers
+    districtSelect.disabled = true;
   }
   await loadFromCloud();
   await loadDistrict(distName);
 }
 
-// ---- Filter GeoJSON to only assigned polygon range ----
 function getAssignedFeatures(allFeatures) {
-  // Admin sees everything
   if (!workerAssignment || isAdmin(currentUser)) return allFeatures;
   const { assignedStart, assignedEnd } = workerAssignment;
   return allFeatures.filter(f => {
@@ -552,7 +549,6 @@ async function loadDistrict(name) {
   const res = await fetch(info.file);
   const rawData = await res.json();
 
-  // Admin sees all — workers see only their assigned range
   if (!isAdmin(currentUser) && workerAssignment && workerAssignment.district.toLowerCase() === name.toLowerCase()) {
     const filtered = getAssignedFeatures(rawData.features);
     geojsonData = { ...rawData, features: filtered };
@@ -574,10 +570,13 @@ async function loadDistrict(name) {
   }).addTo(map);
   addLabels();
   map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
-  progressSection.style.display = '';
-  polygonListSection.style.display = '';
+
+  // ---- FIX: explicitly set display to correct values ----
+  progressSection.style.display = 'block';
+  polygonListSection.style.display = 'flex';   // MUST be flex — internal .polygon-list needs it
   const drawnSection = $('#drawnPolygonsSection');
-  if (drawnSection) drawnSection.style.display = '';
+  if (drawnSection) drawnSection.style.display = 'flex';
+
   renderPolygonList();
   updateProgress();
   renderDrawnPolygonsOnMap();

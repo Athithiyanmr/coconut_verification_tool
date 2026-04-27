@@ -19,17 +19,23 @@
   <div class="modal-overlay" id="userModal">
     <div class="modal-card">
       <h2 class="modal-title">Welcome to Coconut Verifier</h2>
-      <p class="modal-desc">Enter your name exactly as you registered in the Google Form.</p>
+      <p class="modal-desc">Enter your name exactly as you registered.</p>
       <input type="text" id="userName" class="modal-input" placeholder="Your registered name (e.g., Athithiyan)" autocomplete="off" />
       <button class="btn btn-primary modal-btn" id="userNameSubmit">Start Verifying</button>
       <div id="userLoginStatus" class="login-status hidden"></div>
+      <!-- Registration link — shown when WORKER_FORM_URL is set in app.js -->
+      <div id="workerFormLink" style="display:none;margin-top:14px;font-size:12px;color:var(--text-muted);text-align:center">
+        New worker? <a href="https://forms.gle/YOUR_FORM_ID_HERE" target="_blank" rel="noopener noreferrer"
+          id="workerFormAnchor"
+          style="color:var(--primary);font-weight:600;text-decoration:underline">Register here first →</a>
+      </div>
     </div>
   </div>
 
   <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar" id="sidebar">
 
-    <!-- HEADER — always visible, never scrolls -->
+    <!-- HEADER -->
     <div class="sidebar-header">
       <div class="logo-row">
         <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
@@ -50,13 +56,12 @@
           <span class="sync-text">Connecting...</span>
         </div>
       </div>
-      <!-- Assignment badge shown after login -->
       <div class="assignment-badge hidden" id="assignmentBadge">
         <span id="assignmentText"></span>
       </div>
     </div>
 
-    <!-- BODY — scrollable; all sections below header live here -->
+    <!-- BODY -->
     <div class="sidebar-body">
 
       <!-- District Selector -->
