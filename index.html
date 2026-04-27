@@ -14,17 +14,19 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- User Name Modal -->
+
+  <!-- ===================== USER LOGIN MODAL ===================== -->
   <div class="modal-overlay" id="userModal">
     <div class="modal-card">
       <h2 class="modal-title">Welcome to Coconut Verifier</h2>
-      <p class="modal-desc">Enter your name so others know who verified each polygon.</p>
-      <input type="text" id="userName" class="modal-input" placeholder="Your name (e.g., Athithiyan)" autocomplete="off" />
+      <p class="modal-desc">Enter your name exactly as you registered in the Google Form.</p>
+      <input type="text" id="userName" class="modal-input" placeholder="Your registered name (e.g., Athithiyan)" autocomplete="off" />
       <button class="btn btn-primary modal-btn" id="userNameSubmit">Start Verifying</button>
+      <div id="userLoginStatus" class="login-status hidden"></div>
     </div>
   </div>
 
-  <!-- Sidebar -->
+  <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo-row">
@@ -46,12 +48,16 @@
           <span class="sync-text">Connecting...</span>
         </div>
       </div>
+      <!-- Assignment badge shown after login -->
+      <div class="assignment-badge hidden" id="assignmentBadge">
+        <span id="assignmentText"></span>
+      </div>
     </div>
 
-    <!-- District Selector -->
+    <!-- District Selector (hidden for assigned workers, shown as read-only) -->
     <div class="sidebar-section">
       <div class="field-row">
-        <label class="field-label" for="districtSelect">Select District</label>
+        <label class="field-label" for="districtSelect">District</label>
         <button class="btn btn-sm refresh-btn" id="refreshBtn" title="Refresh from cloud">Refresh</button>
       </div>
       <select id="districtSelect" class="select-input">
@@ -63,7 +69,7 @@
     <!-- Progress -->
     <div class="sidebar-section" id="progressSection" style="display:none">
       <div class="progress-header">
-        <span class="field-label">Verification Progress</span>
+        <span class="field-label">Your Progress</span>
         <span class="progress-count" id="progressCount">0 / 0</span>
       </div>
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
@@ -98,7 +104,7 @@
 
   </aside>
 
-  <!-- Map -->
+  <!-- ===================== MAP ===================== -->
   <div class="map-container">
     <div id="map"></div>
 

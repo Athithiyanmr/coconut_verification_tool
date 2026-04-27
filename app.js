@@ -1,6 +1,6 @@
 /* ==========================================================
    Coconut Polygon Verifier — Tamil Nadu 2020
-   Shared backend via Google Sheets (Apps Script Web App)
+   Worker Assignment System — Google Sheets / Apps Script
    ========================================================== */
 
 // ---- Cloud Config ----
@@ -20,6 +20,9 @@ let currentUser = '';
 let isSaving = false;
 let districtBoundaries = null;
 let boundaryLayer = null;
+
+// Worker assignment
+let workerAssignment = null; // { district, assignedStart, assignedEnd, capacity, timePerDay }
 
 // Drawn polygons state
 let drawnPolygons = [];
@@ -73,6 +76,18 @@ async function loadFromCloud() {
     setSyncStatus('synced');
     return true;
   } catch (e) { console.warn('Cloud load failed:', e); setSyncStatus('error'); return false; }
+}
+
+// ---- Fetch worker assignment by name ----
+async function fetchWorkerAssignment(name) {
+  try {
+    const res = await fetch(`${GSHEET_API}?action=getWorker&name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.warn('Worker lookup failed:', e);
+    return { found: false, message: 'Could not reach server.' };
+  }
 }
 
 async function saveOneVerification(key, status, user, timestamp) {
@@ -286,7 +301,6 @@ function renderDrawnPolygonsOnMap() {
   drawnLayer.clearLayers();
   clearDrawnLabels();
   drawnLayerMap = {};
-
   const districtPolys = drawnPolygons.filter(p => p.district === currentDistrict);
   districtPolys.forEach((entry, index) => {
     const isEditing = editingDrawnId === entry.id;
@@ -379,6 +393,10 @@ function deleteDrawnPolygon(polyId) {
   renderDrawnPolygonList();
 }
 
+// ================================================================
+//  INIT & USER LOGIN
+// ================================================================
+
 async function init() {
   const res = await fetch('data/districts.json');
   districtIndex = await res.json();
@@ -403,18 +421,80 @@ function promptUserName() {
   if (modal) modal.classList.remove('hidden');
   const input = $('#userName');
   const btn = $('#userNameSubmit');
+  const statusEl = $('#userLoginStatus');
+
   if (input && btn) {
-    const submit = () => {
+    const submit = async () => {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
-      currentUser = name;
-      modal.classList.add('hidden');
-      if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = name;
+
+      btn.disabled = true;
+      btn.textContent = 'Looking up assignment…';
+      if (statusEl) { statusEl.className = 'login-status login-status-loading'; statusEl.textContent = 'Checking worker registration…'; statusEl.classList.remove('hidden'); }
+
+      const assignment = await fetchWorkerAssignment(name);
+
+      if (assignment.found) {
+        // Worker found — apply their assignment
+        workerAssignment = assignment;
+        currentUser = assignment.name;
+        modal.classList.add('hidden');
+        if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
+        showAssignmentBadge(assignment);
+        // Lock district dropdown to their assigned district
+        applyWorkerAssignment(assignment);
+      } else {
+        // Not found — allow manual entry as a fallback (unassigned user)
+        btn.disabled = false;
+        btn.textContent = 'Start Verifying';
+        if (statusEl) {
+          statusEl.className = 'login-status login-status-warn';
+          statusEl.textContent = `⚠️ Not found in workers list. You can continue without an assignment — select your district manually.`;
+          statusEl.classList.remove('hidden');
+        }
+        // Allow them to proceed after 1.5s
+        setTimeout(() => {
+          currentUser = name;
+          modal.classList.add('hidden');
+          if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
+          workerAssignment = null;
+        }, 2500);
+      }
     };
+
     btn.addEventListener('click', submit);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
     input.focus();
   }
+}
+
+function showAssignmentBadge(assignment) {
+  const badge = $('#assignmentBadge');
+  const text = $('#assignmentText');
+  if (!badge || !text) return;
+  text.innerHTML = `📍 <b>${assignment.district}</b> &nbsp;·&nbsp; Polygons <b>${assignment.assignedStart}</b> – <b>${assignment.assignedEnd}</b> &nbsp;·&nbsp; ${assignment.capacity} total`;
+  badge.classList.remove('hidden');
+}
+
+async function applyWorkerAssignment(assignment) {
+  // Set the district dropdown to the assigned district
+  const distName = assignment.district;
+  if (districtSelect) {
+    districtSelect.value = distName;
+    districtSelect.disabled = true; // lock it — worker cannot switch districts
+  }
+  await loadFromCloud();
+  await loadDistrict(distName);
+}
+
+// ---- Filter GeoJSON to only assigned polygon range ----
+function getAssignedFeatures(allFeatures) {
+  if (!workerAssignment) return allFeatures;
+  const { assignedStart, assignedEnd } = workerAssignment;
+  return allFeatures.filter(f => {
+    const id = parseInt(f.properties.id);
+    return id >= assignedStart && id <= assignedEnd;
+  });
 }
 
 districtSelect.addEventListener('change', async () => {
@@ -432,9 +512,20 @@ async function loadDistrict(name) {
   verifyPanel.classList.add('hidden');
   loadingOverlay.classList.remove('hidden');
   districtInfo.classList.remove('hidden');
-  districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+
   const res = await fetch(info.file);
-  geojsonData = await res.json();
+  const rawData = await res.json();
+
+  // Apply worker assignment filter
+  if (workerAssignment && workerAssignment.district.toLowerCase() === name.toLowerCase()) {
+    const filtered = getAssignedFeatures(rawData.features);
+    geojsonData = { ...rawData, features: filtered };
+    districtInfo.innerHTML = `<b>${name}</b> — Your range: polygons <b>${workerAssignment.assignedStart}</b>–<b>${workerAssignment.assignedEnd}</b> (${filtered.length} shown)`;
+  } else {
+    geojsonData = rawData;
+    districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+  }
+
   clearMap();
   showDistrictBoundary(name);
   polygonLayer = L.geoJSON(geojsonData, {

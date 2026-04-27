@@ -1,180 +1,259 @@
-// ============================================================
-// Google Apps Script — Coconut Verifier Backend
-// ============================================================
-// SETUP INSTRUCTIONS:
-// 1. Go to https://sheets.google.com → Create a new blank spreadsheet
-// 2. Name it "Coconut Verifier Data"
-// 3. Rename Sheet1 to "verifications" 
-// 4. Add headers in Row 1: key | status | user | timestamp
-// 5. Create a second sheet named "drawn_polygons"
-// 6. Add headers in Row 1: id | district | geometry | area_ha | user | timestamp | note
-// 7. Go to Extensions → Apps Script
-// 8. Delete any existing code and paste this entire file
-// 9. Click Deploy → New Deployment
-// 10. Select type: "Web app"
-// 11. Set "Execute as": Me
-// 12. Set "Who has access": Anyone
-// 13. Click Deploy → Authorize → Copy the Web App URL
-// 14. Paste that URL into app.js as the API_URL value
-// ============================================================
+/* ================================================================
+   Coconut Polygon Verifier — Google Apps Script Backend
+   Paste this entire file into Google Apps Script editor.
 
-const SHEET_NAME_VERIFICATIONS = 'verifications';
-const SHEET_NAME_DRAWN = 'drawn_polygons';
+   SHEETS NEEDED IN YOUR SPREADSHEET:
+   1. "verifications"  — polygon verification records
+   2. "drawnPolygons" — user-drawn polygon shapes
+   3. "workers"        — from Google Form responses (or manually filled)
+
+   WORKERS SHEET COLUMNS (Row 1 = headers):
+   A: Timestamp  B: Name  C: District  D: TimePerDay (10/15/20)
+   E: AssignedStart  F: AssignedEnd  (filled automatically by this script)
+   ================================================================ */
+
+const SHEET_VERIFICATIONS = 'verifications';
+const SHEET_DRAWN = 'drawnPolygons';
+const SHEET_WORKERS = 'workers';
+
+// Time → polygon count mapping
+const TIME_TO_POLYGONS = { '10': 500, '15': 750, '20': 1000 };
 
 function doGet(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const action = e.parameter.action || 'getAll';
-
-  let result;
-  if (action === 'getAll') {
-    result = getAllData(ss);
-  }
-
-  return ContentService
-    .createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (action === 'getAll')       return jsonResponse(getAllData());
+  if (action === 'getWorker')    return jsonResponse(getWorkerAssignment(e.parameter.name));
+  if (action === 'getWorkers')   return jsonResponse(getAllWorkers());
+  return jsonResponse({ error: 'Unknown action' });
 }
 
 function doPost(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const data = JSON.parse(e.postData.contents);
-  const action = data.action || 'save';
-
-  let result;
-  if (action === 'saveVerification') {
-    result = saveVerification(ss, data);
-  } else if (action === 'saveDrawnPolygon') {
-    result = saveDrawnPolygon(ss, data);
-  } else if (action === 'deleteDrawnPolygon') {
-    result = deleteDrawnPolygon(ss, data);
-  } else if (action === 'saveBatch') {
-    result = saveBatch(ss, data);
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (body.action === 'saveVerification')  return jsonResponse(saveVerification(body));
+    if (body.action === 'saveDrawnPolygon') return jsonResponse(saveDrawnPolygon(body));
+    if (body.action === 'deleteDrawnPolygon') return jsonResponse(deleteDrawnPolygon(body));
+    if (body.action === 'registerWorker')   return jsonResponse(registerWorker(body));
+    return jsonResponse({ error: 'Unknown action' });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
   }
+}
 
+function jsonResponse(obj) {
   return ContentService
-    .createTextOutput(JSON.stringify(result))
+    .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ---- GET all data ----
-function getAllData(ss) {
+// ---- getAll (verifications + drawnPolygons) ----
+function getAllData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const vSheet = getOrCreateSheet(ss, SHEET_VERIFICATIONS);
+  const dSheet = getOrCreateSheet(ss, SHEET_DRAWN);
+
   const verifications = {};
-  const vSheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
-  if (vSheet && vSheet.getLastRow() > 1) {
-    const vData = vSheet.getRange(2, 1, vSheet.getLastRow() - 1, 4).getValues();
-    vData.forEach(row => {
-      if (row[0]) {
-        verifications[row[0]] = {
-          status: row[1],
-          user: row[2],
-          timestamp: row[3],
-        };
-      }
-    });
+  const vData = vSheet.getDataRange().getValues();
+  for (let i = 1; i < vData.length; i++) {
+    const [key, status, user, timestamp] = vData[i];
+    if (key) verifications[key] = { status, user, timestamp };
   }
 
   const drawnPolygons = [];
-  const dSheet = ss.getSheetByName(SHEET_NAME_DRAWN);
-  if (dSheet && dSheet.getLastRow() > 1) {
-    const dData = dSheet.getRange(2, 1, dSheet.getLastRow() - 1, 7).getValues();
-    dData.forEach(row => {
-      if (row[0]) {
-        drawnPolygons.push({
-          id: row[0],
-          district: row[1],
-          geometry: JSON.parse(row[2] || '{}'),
-          area_ha: row[3],
-          user: row[4],
-          timestamp: row[5],
-          note: row[6],
-        });
-      }
-    });
+  const dData = dSheet.getDataRange().getValues();
+  for (let i = 1; i < dData.length; i++) {
+    const [district, id, geometryJson, area_ha, user, timestamp, note, overlaps] = dData[i];
+    if (!id) continue;
+    try {
+      drawnPolygons.push({
+        district, id,
+        geometry: JSON.parse(geometryJson || '{}'),
+        area_ha, user, timestamp, note,
+        overlaps_existing: overlaps ? overlaps.split(',') : []
+      });
+    } catch (e) {}
   }
 
   return { verifications, drawnPolygons };
 }
 
-// ---- Save a single verification ----
-function saveVerification(ss, data) {
-  const sheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
-  const key = data.key;
-  const status = data.status;
-  const user = data.user;
-  const timestamp = data.timestamp || new Date().toISOString();
+// ---- saveVerification ----
+function saveVerification(body) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_VERIFICATIONS);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === body.key) {
+      sheet.getRange(i + 1, 1, 1, 4).setValues([[body.key, body.status, body.user, body.timestamp]]);
+      return { ok: true, updated: true };
+    }
+  }
+  sheet.appendRow([body.key, body.status, body.user, body.timestamp]);
+  return { ok: true, inserted: true };
+}
 
-  if (sheet.getLastRow() > 1) {
-    const keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
-    const rowIndex = keys.indexOf(key);
-    if (rowIndex >= 0) {
-      const row = rowIndex + 2;
-      sheet.getRange(row, 2, 1, 3).setValues([[status, user, timestamp]]);
-      return { success: true, action: 'updated' };
+// ---- saveDrawnPolygon ----
+function saveDrawnPolygon(body) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_DRAWN);
+  const data = sheet.getDataRange().getValues();
+  const geoStr = JSON.stringify(body.geometry || {});
+  const overlapsStr = (body.overlaps_existing || []).join(',');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === body.district && data[i][1] === body.id) {
+      sheet.getRange(i + 1, 1, 1, 8).setValues([[body.district, body.id, geoStr, body.area_ha, body.user, body.timestamp, body.note, overlapsStr]]);
+      return { ok: true, updated: true };
+    }
+  }
+  sheet.appendRow([body.district, body.id, geoStr, body.area_ha, body.user, body.timestamp, body.note, overlapsStr]);
+  return { ok: true, inserted: true };
+}
+
+// ---- deleteDrawnPolygon ----
+function deleteDrawnPolygon(body) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_DRAWN);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === body.district && data[i][1] === body.id) {
+      sheet.deleteRow(i + 1);
+      return { ok: true };
+    }
+  }
+  return { ok: false, reason: 'Not found' };
+}
+
+// ================================================================
+//  WORKER ASSIGNMENT SYSTEM
+// ================================================================
+
+/*
+  Workers sheet columns:
+  A: Timestamp  B: Name  C: District  D: TimePerDay
+  E: AssignedStart  F: AssignedEnd
+
+  When a name is looked up:
+  - If AssignedStart & AssignedEnd are already set → return them
+  - If not set → calculate next available range for that district
+    (find the max AssignedEnd for that district, add 1)
+  - Save back to sheet
+*/
+
+function getWorkerAssignment(name) {
+  if (!name) return { error: 'No name provided' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_WORKERS);
+  const data = sheet.getDataRange().getValues();
+
+  // Find the worker row (case-insensitive trim match)
+  const nameLower = name.trim().toLowerCase();
+  let workerRow = -1;
+  let workerData = null;
+
+  for (let i = 1; i < data.length; i++) {
+    const rowName = String(data[i][1] || '').trim().toLowerCase();
+    if (rowName === nameLower) {
+      workerRow = i + 1; // 1-indexed sheet row
+      workerData = data[i];
+      break;
     }
   }
 
-  sheet.appendRow([key, status, user, timestamp]);
-  return { success: true, action: 'created' };
-}
+  if (!workerData) {
+    return { found: false, message: 'Name not found in workers sheet. Please register via the Google Form first.' };
+  }
 
-// ---- Save a drawn polygon ----
-function saveDrawnPolygon(ss, data) {
-  const sheet = ss.getSheetByName(SHEET_NAME_DRAWN);
-  const id = data.id;
-  const district = data.district;
+  const district  = String(workerData[2] || '').trim();
+  const timeInput = String(workerData[3] || '10').trim();
+  const capacity  = TIME_TO_POLYGONS[timeInput] || 500;
 
-  if (sheet.getLastRow() > 1) {
-    const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
-    const districts = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues().flat();
-    for (let i = 0; i < ids.length; i++) {
-      if (ids[i] === id && districts[i] === district) {
-        const row = i + 2;
-        sheet.getRange(row, 1, 1, 7).setValues([[
-          id, district, JSON.stringify(data.geometry), data.area_ha,
-          data.user, data.timestamp, data.note
-        ]]);
-        return { success: true, action: 'updated' };
-      }
+  let assignedStart = parseInt(workerData[4]) || 0;
+  let assignedEnd   = parseInt(workerData[5]) || 0;
+
+  // Already assigned — return existing range
+  if (assignedStart > 0 && assignedEnd > 0) {
+    return {
+      found: true,
+      name: String(workerData[1]).trim(),
+      district,
+      timePerDay: timeInput,
+      capacity,
+      assignedStart,
+      assignedEnd
+    };
+  }
+
+  // Not yet assigned — calculate next free range for this district
+  let maxEnd = 0;
+  for (let i = 1; i < data.length; i++) {
+    const rowDistrict = String(data[i][2] || '').trim();
+    const rowEnd = parseInt(data[i][5]) || 0;
+    if (rowDistrict.toLowerCase() === district.toLowerCase() && rowEnd > maxEnd) {
+      maxEnd = rowEnd;
     }
   }
 
-  sheet.appendRow([
-    id, district, JSON.stringify(data.geometry), data.area_ha,
-    data.user, data.timestamp || new Date().toISOString(), data.note || ''
-  ]);
-  return { success: true, action: 'created' };
+  assignedStart = maxEnd + 1;
+  assignedEnd   = assignedStart + capacity - 1;
+
+  // Save back to sheet
+  sheet.getRange(workerRow, 5).setValue(assignedStart);
+  sheet.getRange(workerRow, 6).setValue(assignedEnd);
+
+  return {
+    found: true,
+    name: String(workerData[1]).trim(),
+    district,
+    timePerDay: timeInput,
+    capacity,
+    assignedStart,
+    assignedEnd
+  };
 }
 
-// ---- Delete a drawn polygon ----
-function deleteDrawnPolygon(ss, data) {
-  const sheet = ss.getSheetByName(SHEET_NAME_DRAWN);
-  if (sheet.getLastRow() <= 1) return { success: false };
-
-  const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
-  const districts = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues().flat();
-  for (let i = ids.length - 1; i >= 0; i--) {
-    if (ids[i] === data.id && districts[i] === data.district) {
-      sheet.deleteRow(i + 2);
-      return { success: true, action: 'deleted' };
-    }
-  }
-  return { success: false };
-}
-
-// ---- Batch save ----
-function saveBatch(ss, data) {
-  const results = [];
-  if (data.verifications) {
-    Object.entries(data.verifications).forEach(([key, val]) => {
-      results.push(saveVerification(ss, {
-        key, status: val.status, user: val.user, timestamp: val.timestamp
-      }));
+// ---- getAllWorkers (admin use) ----
+function getAllWorkers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_WORKERS);
+  const data = sheet.getDataRange().getValues();
+  const workers = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][1]) continue;
+    workers.push({
+      name:           String(data[i][1] || '').trim(),
+      district:       String(data[i][2] || '').trim(),
+      timePerDay:     String(data[i][3] || '').trim(),
+      capacity:       TIME_TO_POLYGONS[String(data[i][3] || '10').trim()] || 500,
+      assignedStart:  parseInt(data[i][4]) || 0,
+      assignedEnd:    parseInt(data[i][5]) || 0
     });
   }
-  if (data.drawnPolygons) {
-    data.drawnPolygons.forEach(p => {
-      results.push(saveDrawnPolygon(ss, p));
-    });
+  return { workers };
+}
+
+// ---- registerWorker (from tool itself if needed) ----
+function registerWorker(body) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet(ss, SHEET_WORKERS);
+  const data = sheet.getDataRange().getValues();
+  const nameLower = String(body.name || '').trim().toLowerCase();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1] || '').trim().toLowerCase() === nameLower) {
+      return { ok: false, reason: 'Name already registered' };
+    }
   }
-  return { success: true, count: results.length };
+  sheet.appendRow([new Date().toISOString(), body.name, body.district, body.timePerDay, '', '']);
+  return { ok: true };
+}
+
+// ---- Helper ----
+function getOrCreateSheet(ss, name) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    if (name === SHEET_VERIFICATIONS) sheet.appendRow(['key', 'status', 'user', 'timestamp']);
+    if (name === SHEET_DRAWN)         sheet.appendRow(['district', 'id', 'geometry', 'area_ha', 'user', 'timestamp', 'note', 'overlaps_existing']);
+    if (name === SHEET_WORKERS)       sheet.appendRow(['Timestamp', 'Name', 'District', 'TimePerDay', 'AssignedStart', 'AssignedEnd']);
+  }
+  return sheet;
 }
