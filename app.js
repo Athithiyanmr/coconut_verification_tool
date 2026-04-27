@@ -7,7 +7,7 @@
 const GSHEET_API = 'https://script.google.com/macros/s/AKfycbw2Qgfv7U-gG39a4Z1uvrf_5ZFQnZnj6QMmgj4zmSNTsXobCHKpzRi_ClQBl_vJ0ZZV/exec';
 
 // ---- Google Form for worker registration ----
-const WORKER_FORM_URL = 'https://forms.gle/YOUR_FORM_ID_HERE'; // <-- replace with your real form URL
+const WORKER_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScj_Bj2yGwSUZpbIPWALjPMfpzYCM2-zvK0rwDvvpLlfeSu7A/viewform';
 
 // ---- ADMIN CONFIG ----
 const ADMIN_NAMES = ['athithiyan'];
@@ -432,9 +432,11 @@ function promptUserName() {
   const btn = $('#userNameSubmit');
   const statusEl = $('#userLoginStatus');
 
-  // Inject form link into modal if not already present
+  // Show registration link with real URL
   const formLinkEl = document.getElementById('workerFormLink');
-  if (formLinkEl && WORKER_FORM_URL && WORKER_FORM_URL !== 'https://forms.gle/YOUR_FORM_ID_HERE') {
+  const formAnchor = document.getElementById('workerFormAnchor');
+  if (formLinkEl && formAnchor) {
+    formAnchor.href = WORKER_FORM_URL;
     formLinkEl.style.display = '';
   }
 
@@ -474,15 +476,10 @@ function promptUserName() {
         btn.textContent = 'Start Verifying';
         if (statusEl) {
           statusEl.className = 'login-status login-status-warn';
-          statusEl.textContent = `⚠️ Not found in workers list. You can continue without an assignment — select your district manually.`;
+          statusEl.textContent = `⚠️ Not registered yet. Please fill the Google Form first, then try again.`;
           statusEl.classList.remove('hidden');
         }
-        setTimeout(() => {
-          currentUser = name;
-          modal.classList.add('hidden');
-          if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
-          workerAssignment = null;
-        }, 2500);
+        // Keep modal open so they can register first
       }
     };
 
@@ -571,9 +568,9 @@ async function loadDistrict(name) {
   addLabels();
   map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
 
-  // ---- FIX: explicitly set display to correct values ----
+  // Explicitly set display to correct values
   progressSection.style.display = 'block';
-  polygonListSection.style.display = 'flex';   // MUST be flex — internal .polygon-list needs it
+  polygonListSection.style.display = 'flex';
   const drawnSection = $('#drawnPolygonsSection');
   if (drawnSection) drawnSection.style.display = 'flex';
 
