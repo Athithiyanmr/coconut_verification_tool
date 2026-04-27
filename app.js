@@ -6,6 +6,14 @@
 // ---- Cloud Config ----
 const GSHEET_API = 'https://script.google.com/macros/s/AKfycbw2Qgfv7U-gG39a4Z1uvrf_5ZFQnZnj6QMmgj4zmSNTsXobCHKpzRi_ClQBl_vJ0ZZV/exec';
 
+// ---- ADMIN CONFIG ----
+// Any name in this list gets full unrestricted access (case-insensitive)
+const ADMIN_NAMES = ['athithiyan'];
+
+function isAdmin(name) {
+  return ADMIN_NAMES.includes((name || '').trim().toLowerCase());
+}
+
 // ---- State ----
 let districtIndex = {};
 let currentDistrict = null;
@@ -428,6 +436,26 @@ function promptUserName() {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
 
+      // ============================================================
+      // ADMIN CHECK — Athithiyan bypasses all worker restrictions
+      // ============================================================
+      if (isAdmin(name)) {
+        currentUser = name;
+        workerAssignment = null; // no restriction
+        modal.classList.add('hidden');
+        if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
+
+        // Show admin badge
+        showAdminBadge();
+
+        // Unlock district dropdown fully
+        if (districtSelect) districtSelect.disabled = false;
+
+        if (statusEl) statusEl.classList.add('hidden');
+        return;
+      }
+
+      // ---- Regular worker flow ----
       btn.disabled = true;
       btn.textContent = 'Looking up assignment…';
       if (statusEl) { statusEl.className = 'login-status login-status-loading'; statusEl.textContent = 'Checking worker registration…'; statusEl.classList.remove('hidden'); }
@@ -435,16 +463,13 @@ function promptUserName() {
       const assignment = await fetchWorkerAssignment(name);
 
       if (assignment.found) {
-        // Worker found — apply their assignment
         workerAssignment = assignment;
         currentUser = assignment.name;
         modal.classList.add('hidden');
         if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
         showAssignmentBadge(assignment);
-        // Lock district dropdown to their assigned district
         applyWorkerAssignment(assignment);
       } else {
-        // Not found — allow manual entry as a fallback (unassigned user)
         btn.disabled = false;
         btn.textContent = 'Start Verifying';
         if (statusEl) {
@@ -452,7 +477,6 @@ function promptUserName() {
           statusEl.textContent = `⚠️ Not found in workers list. You can continue without an assignment — select your district manually.`;
           statusEl.classList.remove('hidden');
         }
-        // Allow them to proceed after 1.5s
         setTimeout(() => {
           currentUser = name;
           modal.classList.add('hidden');
@@ -468,6 +492,18 @@ function promptUserName() {
   }
 }
 
+// ---- Admin badge ----
+function showAdminBadge() {
+  const badge = $('#assignmentBadge');
+  const text = $('#assignmentText');
+  if (!badge || !text) return;
+  text.innerHTML = `👑 <b>Admin</b> &nbsp;·&nbsp; Full access — all districts &amp; all polygons`;
+  badge.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)';
+  badge.style.borderColor = '#f1c40f';
+  badge.style.color = '#f1c40f';
+  badge.classList.remove('hidden');
+}
+
 function showAssignmentBadge(assignment) {
   const badge = $('#assignmentBadge');
   const text = $('#assignmentText');
@@ -477,11 +513,10 @@ function showAssignmentBadge(assignment) {
 }
 
 async function applyWorkerAssignment(assignment) {
-  // Set the district dropdown to the assigned district
   const distName = assignment.district;
   if (districtSelect) {
     districtSelect.value = distName;
-    districtSelect.disabled = true; // lock it — worker cannot switch districts
+    districtSelect.disabled = true; // lock for workers
   }
   await loadFromCloud();
   await loadDistrict(distName);
@@ -489,7 +524,8 @@ async function applyWorkerAssignment(assignment) {
 
 // ---- Filter GeoJSON to only assigned polygon range ----
 function getAssignedFeatures(allFeatures) {
-  if (!workerAssignment) return allFeatures;
+  // Admin sees everything
+  if (!workerAssignment || isAdmin(currentUser)) return allFeatures;
   const { assignedStart, assignedEnd } = workerAssignment;
   return allFeatures.filter(f => {
     const id = parseInt(f.properties.id);
@@ -516,14 +552,18 @@ async function loadDistrict(name) {
   const res = await fetch(info.file);
   const rawData = await res.json();
 
-  // Apply worker assignment filter
-  if (workerAssignment && workerAssignment.district.toLowerCase() === name.toLowerCase()) {
+  // Admin sees all — workers see only their assigned range
+  if (!isAdmin(currentUser) && workerAssignment && workerAssignment.district.toLowerCase() === name.toLowerCase()) {
     const filtered = getAssignedFeatures(rawData.features);
     geojsonData = { ...rawData, features: filtered };
     districtInfo.innerHTML = `<b>${name}</b> — Your range: polygons <b>${workerAssignment.assignedStart}</b>–<b>${workerAssignment.assignedEnd}</b> (${filtered.length} shown)`;
   } else {
     geojsonData = rawData;
-    districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+    if (isAdmin(currentUser)) {
+      districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons &nbsp;<span style="color:#f1c40f;font-size:0.75rem">👑 Admin view</span>`;
+    } else {
+      districtInfo.innerHTML = `<b>${name}</b> — ${info.count.toLocaleString()} polygons`;
+    }
   }
 
   clearMap();
