@@ -305,13 +305,8 @@ function renderDrawnPolygonsOnMap() {
       const labelClass = isEditing ? 'drawn-label drawn-label-editing' : 'drawn-label';
       const marker = L.marker(latlng, {
         pane: 'drawnLabelPane',
-        icon: L.divIcon({
-          className: labelClass,
-          html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`,
-          iconSize: [28, 18], iconAnchor: [14, 9],
-        }),
-        interactive: true,
-        zIndexOffset: 1000 + index,
+        icon: L.divIcon({ className: labelClass, html: `<span style="border-color:${color};background:${color}cc">N${entry.id.replace('new_', '')}</span>`, iconSize: [28, 18], iconAnchor: [14, 9] }),
+        interactive: true, zIndexOffset: 1000 + index,
       }).addTo(map);
       marker.on('click', () => zoomToDrawnPolygon(entry));
       drawnLabelMarkers.push(marker);
@@ -830,12 +825,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 's' || e.key === 'S' || e.key === ' ') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); navigatePolygon(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePolygon(-1); }
-    if (e.key === 't' || e.key === 'T') {
-      e.preventDefault();
-      const toggle = $('#overlayToggle');
-      toggle.checked = !toggle.checked;
-      updateOverlayVisibility(toggle.checked);
-    }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); const toggle = $('#overlayToggle'); toggle.checked = !toggle.checked; updateOverlayVisibility(toggle.checked); }
     if (e.key === 'Escape') { verifyPanel.classList.add('hidden'); selectedPolygonId = null; if (highlightLayer) map.removeLayer(highlightLayer); }
   }
 });

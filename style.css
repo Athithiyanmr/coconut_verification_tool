@@ -190,8 +190,11 @@ body {
 .drawn-empty { font-size: 12px; color: var(--text-faint); padding: 4px 0; }
 
 .drawn-polygon-item {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 8px 10px; border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
   border: 1px solid rgba(41,128,185,.22);
   border-left: 3px solid var(--blue);
   background: var(--blue-light);
@@ -235,11 +238,7 @@ body {
   transition: all .12s; line-height: 1.4;
 }
 .dp-btn:hover { background: #fff; color: var(--text); border-color: var(--blue); }
-.dp-btn-edit:hover, .dp-btn-active {
-  color: var(--edit-orange) !important;
-  border-color: var(--edit-orange) !important;
-  background: var(--edit-orange-light) !important;
-}
+.dp-btn-edit:hover, .dp-btn-active { color: var(--edit-orange) !important; border-color: var(--edit-orange) !important; background: var(--edit-orange-light) !important; }
 .dp-btn-delete:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-light); }
 
 .edit-mode-bar {
@@ -393,10 +392,7 @@ body {
 .modal-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 .modal-btn { width: 100%; padding: 12px; font-size: 15px; }
 
-.user-sync-row {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 10px; font-size: 12px; color: var(--text-muted);
-}
+.user-sync-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
 .current-user { font-size: 12px; }
 .sync-indicator { display: flex; align-items: center; gap: 5px; font-size: 11px; }
 .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pending); display: inline-block; }
