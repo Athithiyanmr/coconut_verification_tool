@@ -50,7 +50,6 @@ const districtSelect = $('#districtSelect');
 const districtInfo = $('#districtInfo');
 const progressSection = $('#progressSection');
 const polygonListSection = $('#polygonListSection');
-const sidebarFooter = $('#sidebarFooter');
 const polygonList = $('#polygonList');
 const verifyPanel = $('#verifyPanel');
 const loadingOverlay = $('#loadingOverlay');
@@ -446,8 +445,8 @@ async function loadDistrict(name) {
   map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
   progressSection.style.display = '';
   polygonListSection.style.display = '';
-  sidebarFooter.style.display = '';
-  $('#drawnPolygonsSection').style.display = '';
+  const drawnSection = $('#drawnPolygonsSection');
+  if (drawnSection) drawnSection.style.display = '';
   renderPolygonList();
   updateProgress();
   renderDrawnPolygonsOnMap();
@@ -718,38 +717,6 @@ function updateProgress() {
   $('#statPending').textContent = total - done;
 }
 
-$('#exportBtn').addEventListener('click', () => {
-  if (!geojsonData || !currentDistrict) return;
-  let csv = 'District,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n';
-  geojsonData.features.forEach(f => {
-    const id = f.properties.id, key = `${currentDistrict}:${id}`;
-    const status = getStatus(key) || 'pending', verifier = getVerifier(key);
-    const entry = verificationResults[key], ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
-    const centroid = getCentroid(f.geometry);
-    csv += `"${currentDistrict}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}",training_label\n`;
-  });
-  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
-    const centroid = getCentroid(p.geometry);
-    csv += `"${currentDistrict}",${p.id},${p.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},user_drawn,"${p.user}","${p.timestamp}",user_drawn\n`;
-  });
-  downloadFile(csv, `coconut_verification_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.csv`, 'text/csv');
-});
-
-$('#exportJsonBtn').addEventListener('click', () => {
-  if (!geojsonData || !currentDistrict) return;
-  const output = JSON.parse(JSON.stringify(geojsonData));
-  output.features.forEach(f => {
-    const key = `${currentDistrict}:${f.properties.id}`;
-    f.properties.verification = getStatus(key) || 'pending';
-    f.properties.verified_by = getVerifier(key);
-    f.properties.source = 'training_label';
-  });
-  drawnPolygons.filter(p => p.district === currentDistrict).forEach(p => {
-    output.features.push({ type: 'Feature', geometry: p.geometry, properties: { id: p.id, area_ha: p.area_ha, note: p.note, user: p.user, timestamp: p.timestamp, source: 'user_drawn' } });
-  });
-  downloadFile(JSON.stringify(output, null, 2), `coconut_verified_${currentDistrict.toLowerCase().replace(/\s/g,'_')}.geojson`, 'application/json');
-});
-
 function downloadFile(content, filename, type) {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -758,62 +725,6 @@ function downloadFile(content, filename, type) {
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-$('#exportAllBtn').addEventListener('click', () => exportAllDistricts('csv'));
-$('#exportAllGeoBtn').addEventListener('click', () => exportAllDistricts('geojson'));
-
-async function exportAllDistricts(format) {
-  const btn = format === 'csv' ? $('#exportAllBtn') : $('#exportAllGeoBtn');
-  const origText = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Loading all districts...';
-  try {
-    await loadFromCloud();
-    const districtNames = Object.keys(districtIndex).sort();
-    const allFeatures = [], csvRows = [];
-    let totalPolygons = 0, verified = 0, yesCount = 0, noCount = 0;
-    for (let i = 0; i < districtNames.length; i++) {
-      const dName = districtNames[i], info = districtIndex[dName];
-      btn.textContent = `Loading ${dName}... (${i + 1}/${districtNames.length})`;
-      const gj = await (await fetch(info.file)).json();
-      gj.features.forEach(f => {
-        const id = f.properties.id, key = `${dName}:${id}`;
-        const status = getStatus(key) || 'pending', verifier = getVerifier(key);
-        const entry = verificationResults[key], ts = entry && typeof entry === 'object' ? (entry.timestamp || '') : '';
-        const centroid = getCentroid(f.geometry);
-        totalPolygons++; if (status === 'yes' || status === 'no') verified++;
-        if (status === 'yes') yesCount++; if (status === 'no') noCount++;
-        if (format === 'csv') {
-          csvRows.push(`"${dName}",${id},${f.properties.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},${status},"${verifier}","${ts}",training_label`);
-        } else {
-          const feat = JSON.parse(JSON.stringify(f));
-          feat.properties = { ...feat.properties, district: dName, verification: status, verified_by: verifier, verification_timestamp: ts, source: 'training_label' };
-          allFeatures.push(feat);
-        }
-      });
-    }
-    drawnPolygons.forEach(p => {
-      const centroid = getCentroid(p.geometry);
-      if (format === 'csv') {
-        csvRows.push(`"${p.district}",${p.id},${p.area_ha},${centroid ? centroid[1].toFixed(5) : ''},${centroid ? centroid[0].toFixed(5) : ''},user_drawn,"${p.user}","${p.timestamp}",user_drawn`);
-      } else {
-        allFeatures.push({ type: 'Feature', geometry: p.geometry, properties: { district: p.district, id: p.id, area_ha: p.area_ha, verification: 'user_drawn', verified_by: p.user, verification_timestamp: p.timestamp, note: p.note, source: 'user_drawn' } });
-      }
-    });
-    const timestamp = new Date().toISOString().slice(0, 10);
-    if (format === 'csv') {
-      const summary = [`# Coconut Verification Export - Tamil Nadu 2020`,`# Date: ${new Date().toISOString()}`,`# Total Polygons: ${totalPolygons}`,`# Verified: ${verified} (${(verified/totalPolygons*100).toFixed(1)}%)`,`# Coconut (Yes): ${yesCount}`,`# Not Coconut (No): ${noCount}`,`# Pending: ${totalPolygons - verified}`,`# Drawn Polygons: ${drawnPolygons.length}`,`#`].join('\n');
-      downloadFile(summary + '\nDistrict,Polygon_ID,Area_ha,Latitude,Longitude,Verification,Verified_By,Timestamp,Source\n' + csvRows.join('\n') + '\n', `coconut_verification_all_districts_${timestamp}.csv`, 'text/csv');
-    } else {
-      downloadFile(JSON.stringify({ type: 'FeatureCollection', properties: { name: 'Coconut Verification - Tamil Nadu 2020', exportDate: new Date().toISOString(), totalPolygons, verified, coconut: yesCount, notCoconut: noCount, pending: totalPolygons - verified, drawnPolygons: drawnPolygons.length }, features: allFeatures }), `coconut_verification_all_districts_${timestamp}.geojson`, 'application/json');
-    }
-    btn.textContent = `Done! ${totalPolygons} polygons exported`;
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
-  } catch (e) {
-    console.error('Export all failed:', e);
-    btn.textContent = 'Export failed - try again';
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
-  }
 }
 
 document.addEventListener('keydown', (e) => {
