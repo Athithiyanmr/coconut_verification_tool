@@ -45,6 +45,7 @@ body {
   display: flex;
 }
 
+/* ---- SIDEBAR ---- */
 .sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
@@ -53,14 +54,25 @@ body {
   border-right: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden;   /* outer container does NOT scroll */
   z-index: 10;
 }
+
 .sidebar-header {
   padding: 16px 18px;
   border-bottom: 1px solid var(--divider);
-  flex-shrink: 0;
+  flex-shrink: 0;     /* header never shrinks */
 }
+
+/* Scrollable body below the header */
+.sidebar-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .logo-row { display: flex; align-items: center; gap: 10px; color: var(--primary); }
 .logo-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
 .logo-sub { font-size: 12px; color: var(--text-muted); }
@@ -106,14 +118,14 @@ body {
 .dot-no { background: var(--no); }
 .dot-skip { background: var(--pending); }
 
+/* Polygon list — fixed height, scrolls internally */
 .polygon-list-section {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  flex-shrink: 0;
   padding: 14px 18px;
   border-bottom: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;   /* fixed cap so drawn section always shows below */
 }
 
 .list-toolbar {
@@ -162,29 +174,24 @@ body {
 .poly-status.s-no { color: var(--no); }
 .poly-status.s-pending { color: var(--pending); }
 
+/* ---- DRAWN POLYGONS SECTION ---- */
 .drawn-polygons-section {
   flex-shrink: 0;
-  max-height: 220px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 10px 18px;
+  padding: 10px 18px 14px;
   border-bottom: 1px solid var(--divider);
-  transition: max-height .2s ease;
-}
-
-.drawn-polygons-section:has(#drawnEmpty:not([style*='none'])) {
-  max-height: 62px;
+  /* No max-height restriction — let sidebar-body scroll show it */
 }
 
 .drawn-polygon-list {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 1px 0;
+  padding: 4px 0 0;
+  /* No overflow hidden — let the sidebar-body handle scrolling */
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .drawn-empty { font-size: 12px; color: var(--text-faint); padding: 4px 0; }
@@ -470,12 +477,31 @@ body {
 .btn-export-all-geo:hover { background: #eaf2f8; }
 .btn-export-all-geo:disabled { opacity: .5; cursor: wait; }
 
+/* Assignment badge */
+.assignment-badge {
+  margin-top: 10px; padding: 8px 12px;
+  background: var(--primary-light);
+  border: 1px solid rgba(45,122,58,.25);
+  border-radius: var(--radius);
+  font-size: 12px; color: var(--primary); font-weight: 500;
+}
+.assignment-badge.hidden { display: none !important; }
+
+/* Login status message */
+.login-status {
+  margin-top: 10px; padding: 8px 12px;
+  border-radius: var(--radius); font-size: 12px; text-align: left;
+}
+.login-status-loading { background: var(--warning-light); color: var(--warning); }
+.login-status-warn    { background: var(--warning-light); color: var(--warning); }
+.login-status-error   { background: var(--danger-light);  color: var(--danger); }
+
 @media (max-width: 768px) {
   .sidebar { width: 100%; min-width: 100%; height: auto; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--divider); }
   body { flex-direction: column; }
   .map-container { flex: 1; height: 50vh; }
   .verify-panel { min-width: 300px; max-width: 90vw; bottom: 12px; }
-  .polygon-list-section { max-height: 28vh; }
+  .polygon-list-section { max-height: 180px; }
   .drawn-polygons-section { max-height: 120px; }
   .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
   .guide-fab { top: auto; bottom: 80px; right: 12px; }
