@@ -54,17 +54,17 @@ body {
   border-right: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
-  overflow: hidden;   /* outer container does NOT scroll */
+  overflow: hidden;
   z-index: 10;
 }
 
 .sidebar-header {
   padding: 16px 18px;
   border-bottom: 1px solid var(--divider);
-  flex-shrink: 0;     /* header never shrinks */
+  flex-shrink: 0;
 }
 
-/* Scrollable body below the header */
+/* Scrollable body: takes all remaining sidebar height */
 .sidebar-body {
   flex: 1 1 0;
   min-height: 0;
@@ -118,14 +118,19 @@ body {
 .dot-no { background: var(--no); }
 .dot-skip { background: var(--pending); }
 
-/* Polygon list — fixed height, scrolls internally */
+/* ---- POLYGON LIST SECTION ----
+   height: 280px gives a definite size so the internal flex child
+   (.polygon-list with flex:1) can resolve and scroll correctly.
+   The sidebar-body scrolls for everything else below it.
+*/
 .polygon-list-section {
+  height: 280px;          /* definite height — critical for internal flex scroll */
   flex-shrink: 0;
   padding: 14px 18px;
   border-bottom: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
-  max-height: 300px;   /* fixed cap so drawn section always shows below */
+  overflow: hidden;       /* clip; inner .polygon-list scrolls */
 }
 
 .list-toolbar {
@@ -142,6 +147,7 @@ body {
 .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
 .filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+/* Internal scroll for polygon list items */
 .polygon-list {
   flex: 1 1 0;
   min-height: 0;
@@ -181,7 +187,6 @@ body {
   flex-direction: column;
   padding: 10px 18px 14px;
   border-bottom: 1px solid var(--divider);
-  /* No max-height restriction — let sidebar-body scroll show it */
 }
 
 .drawn-polygon-list {
@@ -189,7 +194,6 @@ body {
   flex-direction: column;
   gap: 5px;
   padding: 4px 0 0;
-  /* No overflow hidden — let the sidebar-body handle scrolling */
   max-height: 260px;
   overflow-y: auto;
 }
@@ -501,8 +505,8 @@ body {
   body { flex-direction: column; }
   .map-container { flex: 1; height: 50vh; }
   .verify-panel { min-width: 300px; max-width: 90vw; bottom: 12px; }
-  .polygon-list-section { max-height: 180px; }
-  .drawn-polygons-section { max-height: 120px; }
+  .polygon-list-section { height: 180px; }
+  .drawn-polygons-section { max-height: 120px; overflow-y: auto; }
   .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
   .guide-fab { top: auto; bottom: 80px; right: 12px; }
   .guide-card img { height: 100px; }
