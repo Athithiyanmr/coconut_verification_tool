@@ -28,6 +28,8 @@
 
   <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar" id="sidebar">
+
+    <!-- HEADER — always visible, never scrolls -->
     <div class="sidebar-header">
       <div class="logo-row">
         <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
@@ -54,53 +56,58 @@
       </div>
     </div>
 
-    <!-- District Selector (hidden for assigned workers, shown as read-only) -->
-    <div class="sidebar-section">
-      <div class="field-row">
-        <label class="field-label" for="districtSelect">District</label>
-        <button class="btn btn-sm refresh-btn" id="refreshBtn" title="Refresh from cloud">Refresh</button>
-      </div>
-      <select id="districtSelect" class="select-input">
-        <option value="">— Choose a district —</option>
-      </select>
-      <div id="districtInfo" class="district-info hidden"></div>
-    </div>
+    <!-- BODY — scrollable; all sections below header live here -->
+    <div class="sidebar-body">
 
-    <!-- Progress -->
-    <div class="sidebar-section" id="progressSection" style="display:none">
-      <div class="progress-header">
-        <span class="field-label">Your Progress</span>
-        <span class="progress-count" id="progressCount">0 / 0</span>
+      <!-- District Selector -->
+      <div class="sidebar-section">
+        <div class="field-row">
+          <label class="field-label" for="districtSelect">District</label>
+          <button class="btn btn-sm refresh-btn" id="refreshBtn" title="Refresh from cloud">Refresh</button>
+        </div>
+        <select id="districtSelect" class="select-input">
+          <option value="">— Choose a district —</option>
+        </select>
+        <div id="districtInfo" class="district-info hidden"></div>
       </div>
-      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-      <div class="progress-stats">
-        <span class="stat stat-yes"><span class="dot dot-yes"></span> Yes: <b id="statYes">0</b></span>
-        <span class="stat stat-no"><span class="dot dot-no"></span> No: <b id="statNo">0</b></span>
-        <span class="stat stat-skip"><span class="dot dot-skip"></span> Pending: <b id="statPending">0</b></span>
-      </div>
-    </div>
 
-    <!-- Polygon List -->
-    <div class="sidebar-section polygon-list-section" id="polygonListSection" style="display:none">
-      <div class="list-toolbar">
-        <label class="field-label">Polygons</label>
-        <div class="filter-btns">
-          <button class="filter-btn active" data-filter="all">All</button>
-          <button class="filter-btn" data-filter="pending">Pending</button>
-          <button class="filter-btn" data-filter="yes">Yes</button>
-          <button class="filter-btn" data-filter="no">No</button>
+      <!-- Progress -->
+      <div class="sidebar-section" id="progressSection" style="display:none">
+        <div class="progress-header">
+          <span class="field-label">Your Progress</span>
+          <span class="progress-count" id="progressCount">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-stats">
+          <span class="stat stat-yes"><span class="dot dot-yes"></span> Yes: <b id="statYes">0</b></span>
+          <span class="stat stat-no"><span class="dot dot-no"></span> No: <b id="statNo">0</b></span>
+          <span class="stat stat-skip"><span class="dot dot-skip"></span> Pending: <b id="statPending">0</b></span>
         </div>
       </div>
-      <div class="polygon-list" id="polygonList"></div>
-    </div>
 
-    <!-- New Polygons (user-drawn) -->
-    <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
-      <label class="field-label">New Polygons</label>
-      <div class="drawn-polygon-list" id="drawnPolygonList">
-        <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
+      <!-- Polygon List -->
+      <div class="sidebar-section polygon-list-section" id="polygonListSection" style="display:none">
+        <div class="list-toolbar">
+          <label class="field-label">Polygons</label>
+          <div class="filter-btns">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="pending">Pending</button>
+            <button class="filter-btn" data-filter="yes">Yes</button>
+            <button class="filter-btn" data-filter="no">No</button>
+          </div>
+        </div>
+        <div class="polygon-list" id="polygonList"></div>
       </div>
-    </div>
+
+      <!-- New Polygons (user-drawn) -->
+      <div class="sidebar-section drawn-polygons-section" id="drawnPolygonsSection" style="display:none">
+        <label class="field-label">New Polygons</label>
+        <div class="drawn-polygon-list" id="drawnPolygonList">
+          <div class="drawn-empty" id="drawnEmpty">No polygons drawn yet.</div>
+        </div>
+      </div>
+
+    </div><!-- /sidebar-body -->
 
   </aside>
 
