@@ -563,27 +563,20 @@ async function applyWorkerAssignment(assignment) {
   if (assignedDistricts.length === 0) return;
 
   if (districtSelect) {
-    // Build a set of lowercase assigned district names for fast lookup
     const assignedSet = new Set(assignedDistricts.map(d => d.toLowerCase()));
-
-    // Collect options to remove (non-assigned, non-placeholder)
     const toRemove = [];
     Array.from(districtSelect.options).forEach(opt => {
-      if (!opt.value) return; // keep placeholder
+      if (!opt.value) return;
       if (!assignedSet.has(opt.value.toLowerCase())) {
         toRemove.push(opt);
       }
     });
-    // Remove unassigned options from the DOM — opt.hidden is ignored by Chrome/Firefox
     toRemove.forEach(opt => opt.remove());
-
-    // Always keep dropdown enabled so worker can switch between their assigned districts
     districtSelect.disabled = false;
   }
 
   await loadFromCloud();
 
-  // Auto-load the first assigned district
   const firstDistrict = assignedDistricts[0];
   if (districtSelect) districtSelect.value = firstDistrict;
   await loadDistrict(firstDistrict);
@@ -955,13 +948,3 @@ setInterval(async () => {
 }, 60000);
 
 init();
-
-(function() {
-  var guideBtn = document.getElementById('guideToggle');
-  var guidePanel = document.getElementById('guidePanel');
-  var closeGuide = document.getElementById('closeGuide');
-  if (guideBtn && guidePanel) {
-    guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
-    closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
-  }
-})();
