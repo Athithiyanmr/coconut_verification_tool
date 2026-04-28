@@ -406,22 +406,15 @@ function deleteDrawnPolygon(polyId) {
 //  WORKER HELPERS — multi-district support
 // ================================================================
 
-/**
- * Returns the ranges for the current district from the worker assignment.
- * Handles both legacy single-district (assignment.district + assignment.ranges)
- * and new multi-district (assignment.districts[]) format.
- */
 function getWorkerRangesForDistrict(districtName) {
   if (!workerAssignment || isAdmin(currentUser)) return null;
   const distLower = districtName.toLowerCase();
 
-  // New multi-district format
   if (Array.isArray(workerAssignment.districts) && workerAssignment.districts.length > 0) {
     const match = workerAssignment.districts.find(d => d.district.toLowerCase() === distLower);
     return match ? match.ranges : null;
   }
 
-  // Legacy single-district format
   if (workerAssignment.district && workerAssignment.district.toLowerCase() === distLower) {
     return workerAssignment.ranges || [{ start: workerAssignment.assignedStart, end: workerAssignment.assignedEnd }];
   }
@@ -429,17 +422,11 @@ function getWorkerRangesForDistrict(districtName) {
   return null;
 }
 
-/**
- * Returns true if the worker is assigned to the given district.
- */
 function isWorkerAssignedToDistrict(districtName) {
   if (isAdmin(currentUser)) return true;
   return getWorkerRangesForDistrict(districtName) !== null;
 }
 
-/**
- * Returns all district names assigned to the current worker.
- */
 function getWorkerDistricts() {
   if (!workerAssignment || isAdmin(currentUser)) return [];
   if (Array.isArray(workerAssignment.districts) && workerAssignment.districts.length > 0) {
@@ -479,7 +466,6 @@ function promptUserName() {
   const btn = $('#userNameSubmit');
   const statusEl = $('#userLoginStatus');
 
-  // Show registration link with real URL
   const formLinkEl = document.getElementById('workerFormLink');
   const formAnchor = document.getElementById('workerFormAnchor');
   if (formLinkEl && formAnchor) {
@@ -492,7 +478,6 @@ function promptUserName() {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
 
-      // ADMIN CHECK
       if (isAdmin(name)) {
         currentUser = name;
         workerAssignment = null;
@@ -504,12 +489,15 @@ function promptUserName() {
         return;
       }
 
-      // Regular worker flow
       btn.disabled = true;
       btn.textContent = 'Looking up assignment…';
       if (statusEl) { statusEl.className = 'login-status login-status-loading'; statusEl.textContent = 'Checking worker registration…'; statusEl.classList.remove('hidden'); }
 
       const assignment = await fetchWorkerAssignment(name);
+
+      // ── DEBUG ALERT — remove after confirming ──
+      alert('DEBUG — Server returned:\n\n' + JSON.stringify(assignment, null, 2));
+      // ────────────────────────────────────────────
 
       if (assignment.found) {
         workerAssignment = assignment;
@@ -526,7 +514,6 @@ function promptUserName() {
           statusEl.textContent = `⚠️ Not registered yet. Please fill the Google Form first, then try again.`;
           statusEl.classList.remove('hidden');
         }
-        // Keep modal open so they can register first
       }
     };
 
@@ -547,9 +534,6 @@ function showAdminBadge() {
   badge.classList.remove('hidden');
 }
 
-/**
- * Shows the assignment badge — handles multiple districts.
- */
 function showAssignmentBadge(assignment) {
   const badge = $('#assignmentBadge');
   const text = $('#assignmentText');
@@ -560,7 +544,6 @@ function showAssignmentBadge(assignment) {
   if (districts.length === 0) {
     text.innerHTML = `⚠️ No districts assigned yet`;
   } else if (districts.length === 1) {
-    // Single district — show range details
     const d = Array.isArray(assignment.districts) ? assignment.districts[0] : null;
     const rangeStr = d
       ? d.ranges.map(r => `${r.start}–${r.end}`).join(', ')
@@ -568,7 +551,6 @@ function showAssignmentBadge(assignment) {
     const capacity = assignment.capacity || '';
     text.innerHTML = `📍 <b>${districts[0]}</b> &nbsp;·&nbsp; Polygons <b>${rangeStr}</b>${capacity ? ` &nbsp;·&nbsp; ${capacity}` : ''}`;
   } else {
-    // Multiple districts
     const districtList = districts.join(', ');
     text.innerHTML = `📍 <b>${districts.length} districts assigned:</b> ${districtList}`;
   }
@@ -576,39 +558,30 @@ function showAssignmentBadge(assignment) {
   badge.classList.remove('hidden');
 }
 
-/**
- * After login: lock the district selector to assigned districts only,
- * then auto-load the first assigned district.
- */
 async function applyWorkerAssignment(assignment) {
   const assignedDistricts = getWorkerDistricts();
 
   if (assignedDistricts.length === 0) return;
 
   if (districtSelect) {
-    // Hide all options that are NOT in the worker's assigned districts
     Array.from(districtSelect.options).forEach(opt => {
-      if (!opt.value) return; // keep the placeholder
+      if (!opt.value) return;
       opt.hidden = !assignedDistricts.some(d => d.toLowerCase() === opt.value.toLowerCase());
     });
-    districtSelect.disabled = assignedDistricts.length === 1; // lock if only one district
+    districtSelect.disabled = assignedDistricts.length === 1;
   }
 
   await loadFromCloud();
 
-  // Auto-load first district
   const firstDistrict = assignedDistricts[0];
   if (districtSelect) districtSelect.value = firstDistrict;
   await loadDistrict(firstDistrict);
 }
 
-/**
- * Filters features to only those in the worker's assigned ranges for the current district.
- */
 function getAssignedFeatures(allFeatures) {
   if (!workerAssignment || isAdmin(currentUser)) return allFeatures;
   const ranges = getWorkerRangesForDistrict(currentDistrict);
-  if (!ranges) return allFeatures; // not restricted in this district
+  if (!ranges) return allFeatures;
   return allFeatures.filter(f => {
     const id = parseInt(f.properties.id);
     return ranges.some(r => id >= r.start && id <= r.end);
@@ -659,7 +632,6 @@ async function loadDistrict(name) {
   addLabels();
   map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
 
-  // Explicitly set display to correct values
   progressSection.style.display = 'block';
   polygonListSection.style.display = 'flex';
   const drawnSection = $('#drawnPolygonsSection');
