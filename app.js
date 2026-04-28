@@ -495,10 +495,6 @@ function promptUserName() {
 
       const assignment = await fetchWorkerAssignment(name);
 
-      // ── DEBUG ALERT — remove after confirming ──
-      alert('DEBUG — Server returned:\n\n' + JSON.stringify(assignment, null, 2));
-      // ────────────────────────────────────────────
-
       if (assignment.found) {
         workerAssignment = assignment;
         currentUser = assignment.name;
@@ -551,8 +547,12 @@ function showAssignmentBadge(assignment) {
     const capacity = assignment.capacity || '';
     text.innerHTML = `📍 <b>${districts[0]}</b> &nbsp;·&nbsp; Polygons <b>${rangeStr}</b>${capacity ? ` &nbsp;·&nbsp; ${capacity}` : ''}`;
   } else {
-    const districtList = districts.join(', ');
-    text.innerHTML = `📍 <b>${districts.length} districts assigned:</b> ${districtList}`;
+    // Show all districts with their ranges
+    const districtDetails = assignment.districts.map(d => {
+      const rangeStr = d.ranges.map(r => `${r.start}–${r.end}`).join(', ');
+      return `<b>${d.district}</b> (${rangeStr})`;
+    }).join(' &nbsp;|&nbsp; ');
+    text.innerHTML = `📍 ${districtDetails}`;
   }
 
   badge.classList.remove('hidden');
@@ -568,11 +568,13 @@ async function applyWorkerAssignment(assignment) {
       if (!opt.value) return;
       opt.hidden = !assignedDistricts.some(d => d.toLowerCase() === opt.value.toLowerCase());
     });
-    districtSelect.disabled = assignedDistricts.length === 1;
+    // Always keep dropdown enabled so worker can switch between their assigned districts
+    districtSelect.disabled = false;
   }
 
   await loadFromCloud();
 
+  // Auto-load the first assigned district
   const firstDistrict = assignedDistricts[0];
   if (districtSelect) districtSelect.value = firstDistrict;
   await loadDistrict(firstDistrict);
