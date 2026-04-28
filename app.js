@@ -403,6 +403,53 @@ function deleteDrawnPolygon(polyId) {
 }
 
 // ================================================================
+//  WORKER HELPERS — multi-district support
+// ================================================================
+
+/**
+ * Returns the ranges for the current district from the worker assignment.
+ * Handles both legacy single-district (assignment.district + assignment.ranges)
+ * and new multi-district (assignment.districts[]) format.
+ */
+function getWorkerRangesForDistrict(districtName) {
+  if (!workerAssignment || isAdmin(currentUser)) return null;
+  const distLower = districtName.toLowerCase();
+
+  // New multi-district format
+  if (Array.isArray(workerAssignment.districts) && workerAssignment.districts.length > 0) {
+    const match = workerAssignment.districts.find(d => d.district.toLowerCase() === distLower);
+    return match ? match.ranges : null;
+  }
+
+  // Legacy single-district format
+  if (workerAssignment.district && workerAssignment.district.toLowerCase() === distLower) {
+    return workerAssignment.ranges || [{ start: workerAssignment.assignedStart, end: workerAssignment.assignedEnd }];
+  }
+
+  return null;
+}
+
+/**
+ * Returns true if the worker is assigned to the given district.
+ */
+function isWorkerAssignedToDistrict(districtName) {
+  if (isAdmin(currentUser)) return true;
+  return getWorkerRangesForDistrict(districtName) !== null;
+}
+
+/**
+ * Returns all district names assigned to the current worker.
+ */
+function getWorkerDistricts() {
+  if (!workerAssignment || isAdmin(currentUser)) return [];
+  if (Array.isArray(workerAssignment.districts) && workerAssignment.districts.length > 0) {
+    return workerAssignment.districts.map(d => d.district);
+  }
+  if (workerAssignment.district) return [workerAssignment.district];
+  return [];
+}
+
+// ================================================================
 //  INIT & USER LOGIN
 // ================================================================
 
@@ -500,30 +547,71 @@ function showAdminBadge() {
   badge.classList.remove('hidden');
 }
 
+/**
+ * Shows the assignment badge — handles multiple districts.
+ */
 function showAssignmentBadge(assignment) {
   const badge = $('#assignmentBadge');
   const text = $('#assignmentText');
   if (!badge || !text) return;
-  text.innerHTML = `📍 <b>${assignment.district}</b> &nbsp;·&nbsp; Polygons <b>${assignment.assignedStart}</b> – <b>${assignment.assignedEnd}</b> &nbsp;·&nbsp; ${assignment.capacity} total`;
+
+  const districts = getWorkerDistricts();
+
+  if (districts.length === 0) {
+    text.innerHTML = `⚠️ No districts assigned yet`;
+  } else if (districts.length === 1) {
+    // Single district — show range details
+    const d = Array.isArray(assignment.districts) ? assignment.districts[0] : null;
+    const rangeStr = d
+      ? d.ranges.map(r => `${r.start}–${r.end}`).join(', ')
+      : `${assignment.assignedStart}–${assignment.assignedEnd}`;
+    const capacity = assignment.capacity || '';
+    text.innerHTML = `📍 <b>${districts[0]}</b> &nbsp;·&nbsp; Polygons <b>${rangeStr}</b>${capacity ? ` &nbsp;·&nbsp; ${capacity}` : ''}`;
+  } else {
+    // Multiple districts
+    const districtList = districts.join(', ');
+    text.innerHTML = `📍 <b>${districts.length} districts assigned:</b> ${districtList}`;
+  }
+
   badge.classList.remove('hidden');
 }
 
+/**
+ * After login: lock the district selector to assigned districts only,
+ * then auto-load the first assigned district.
+ */
 async function applyWorkerAssignment(assignment) {
-  const distName = assignment.district;
+  const assignedDistricts = getWorkerDistricts();
+
+  if (assignedDistricts.length === 0) return;
+
   if (districtSelect) {
-    districtSelect.value = distName;
-    districtSelect.disabled = true;
+    // Hide all options that are NOT in the worker's assigned districts
+    Array.from(districtSelect.options).forEach(opt => {
+      if (!opt.value) return; // keep the placeholder
+      opt.hidden = !assignedDistricts.some(d => d.toLowerCase() === opt.value.toLowerCase());
+    });
+    districtSelect.disabled = assignedDistricts.length === 1; // lock if only one district
   }
+
   await loadFromCloud();
-  await loadDistrict(distName);
+
+  // Auto-load first district
+  const firstDistrict = assignedDistricts[0];
+  if (districtSelect) districtSelect.value = firstDistrict;
+  await loadDistrict(firstDistrict);
 }
 
+/**
+ * Filters features to only those in the worker's assigned ranges for the current district.
+ */
 function getAssignedFeatures(allFeatures) {
   if (!workerAssignment || isAdmin(currentUser)) return allFeatures;
-  const { assignedStart, assignedEnd } = workerAssignment;
+  const ranges = getWorkerRangesForDistrict(currentDistrict);
+  if (!ranges) return allFeatures; // not restricted in this district
   return allFeatures.filter(f => {
     const id = parseInt(f.properties.id);
-    return id >= assignedStart && id <= assignedEnd;
+    return ranges.some(r => id >= r.start && id <= r.end);
   });
 }
 
@@ -546,10 +634,13 @@ async function loadDistrict(name) {
   const res = await fetch(info.file);
   const rawData = await res.json();
 
-  if (!isAdmin(currentUser) && workerAssignment && workerAssignment.district.toLowerCase() === name.toLowerCase()) {
+  const ranges = getWorkerRangesForDistrict(name);
+
+  if (!isAdmin(currentUser) && ranges) {
     const filtered = getAssignedFeatures(rawData.features);
     geojsonData = { ...rawData, features: filtered };
-    districtInfo.innerHTML = `<b>${name}</b> — Your range: polygons <b>${workerAssignment.assignedStart}</b>–<b>${workerAssignment.assignedEnd}</b> (${filtered.length} shown)`;
+    const rangeStr = ranges.map(r => `${r.start}–${r.end}`).join(', ');
+    districtInfo.innerHTML = `<b>${name}</b> — Your range: polygons <b>${rangeStr}</b> (${filtered.length} shown)`;
   } else {
     geojsonData = rawData;
     if (isAdmin(currentUser)) {
