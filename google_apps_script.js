@@ -303,7 +303,7 @@ function buildWorkerStats(ss) {
       if (['coconut','non-coconut','verified','yes','no'].indexOf(status) >= 0) completed++;
     });
 
-    var rangeStr = w.ranges.map(function(r) { return r.start + '–' + r.end; }).join(', ');
+    var rangeStr = w.ranges.map(function(r) { return r.start + '\u2013' + r.end; }).join(', ');
 
     stats.push({
       name: w.name, email: w.email, district: w.district,
@@ -319,7 +319,9 @@ function buildWorkerStats(ss) {
 
 
 // ============================================================
-// getWorker — groups by district, returns all districts
+// getWorker — groups ALL rows for a worker by district
+// FIX: returns districts[] array always; no broken single-district
+// shortcut that hides the second district
 // ============================================================
 function getWorker(ss, name) {
   if (!name) return { found: false, message: 'No name provided.' };
@@ -355,17 +357,21 @@ function getWorker(ss, name) {
     districts: []
   };
 
+  // districtMap key = district name (lowercase)
+  // Each entry: { district: string, ranges: [{start, end}] }
   var districtMap = {};
 
   for (var i = 1; i < data.length; i++) {
     var rowName = nameCol >= 0 ? data[i][nameCol].toString().trim().toLowerCase() : '';
     if (rowName !== name.toLowerCase()) continue;
 
+    // Check active flag
     var active = activeCol >= 0 ? data[i][activeCol] : true;
     if (active === false || active === 'FALSE' || String(active).toLowerCase() === 'false') {
       return { found: false, message: 'Your account is inactive. Contact admin.' };
     }
 
+    // Capture worker meta from first matching row only
     if (!matched.found) {
       matched.found    = true;
       matched.name     = nameCol  >= 0 ? data[i][nameCol].toString().trim()  : name;
@@ -397,14 +403,8 @@ function getWorker(ss, name) {
     return { found: false, message: 'You are registered but polygon range not yet assigned. Please wait for admin.' };
   }
 
-  // Backwards-compatibility for single-district workers
-  if (matched.districts.length === 1) {
-    var d = matched.districts[0];
-    matched.district      = d.district;
-    matched.ranges        = d.ranges;
-    matched.assignedStart = d.ranges[0].start;
-    matched.assignedEnd   = d.ranges[d.ranges.length - 1].end;
-  }
+  // NOTE: No single-district shortcut here — app.js reads matched.districts[] always.
+  // This ensures workers with 2+ districts get ALL their assignments.
 
   return matched;
 }
