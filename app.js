@@ -438,6 +438,8 @@ function getWorkerDistricts() {
 
 // ================================================================
 //  ADMIN-ONLY: EXPORT DISTRICT GEOJSON
+//  Includes both original polygons (with verification status)
+//  AND all new drawn polygons for the district.
 // ================================================================
 
 function showAdminExportSection() {
@@ -603,6 +605,10 @@ function showAdminBadge() {
   badge.style.borderColor = '#f1c40f';
   badge.style.color = '#f1c40f';
   badge.classList.remove('hidden');
+
+  // Reveal Top Contributors button — admin only
+  const contribBtn = document.getElementById('contribToggle');
+  if (contribBtn) contribBtn.style.display = '';
 }
 
 function showAssignmentBadge(assignment) {
