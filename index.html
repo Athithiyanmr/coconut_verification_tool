@@ -113,13 +113,17 @@
 
     </div><!-- /sidebar-body -->
 
-    <!-- ADMIN-ONLY EXPORT FOOTER -->
-    <div class="sidebar-footer hidden" id="adminExportSection">
-      <div class="export-divider"></div>
-      <span class="field-label" style="margin-bottom:4px;">&#128081; Admin Export</span>
-      <button class="btn-export-all-geo" id="btnExportDistGeo" disabled>
-        Export District GeoJSON
-      </button>
+    <!-- ===================== SIDEBAR FOOTER ===================== -->
+    <div class="sidebar-footer">
+
+      <!-- Admin-only: Export District GeoJSON -->
+      <div id="adminExportSection" class="hidden">
+        <div class="export-divider"></div>
+        <button id="btnExportDistGeo" class="btn-export-all" disabled>
+          Export District GeoJSON
+        </button>
+      </div>
+
     </div>
 
   </aside>
