@@ -23,7 +23,6 @@
       <input type="text" id="userName" class="modal-input" placeholder="Your registered name (e.g., Athithiyan)" autocomplete="off" />
       <button class="btn btn-primary modal-btn" id="userNameSubmit">Start Verifying</button>
       <div id="userLoginStatus" class="login-status hidden"></div>
-      <!-- Registration link — shown when WORKER_FORM_URL is set in app.js -->
       <div id="workerFormLink" style="display:none;margin-top:14px;font-size:12px;color:var(--text-muted);text-align:center">
         New worker? <a href="https://forms.gle/YOUR_FORM_ID_HERE" target="_blank" rel="noopener noreferrer"
           id="workerFormAnchor"
@@ -156,6 +155,30 @@
       Visual Guide
     </button>
 
+    <!-- 🏆 Top Contributors Button (standalone, outside guide) -->
+    <button class="contrib-fab" id="contribToggle" title="Top Contributors" onclick="toggleContrib()">
+      🏆 Top 3
+    </button>
+
+    <!-- Top Contributors Popup -->
+    <div class="contrib-panel hidden" id="contribPanel">
+      <div class="contrib-header">
+        <span style="font-weight:700;font-size:13px;color:var(--text,#1e293b);">🏆 Top Contributors</span>
+        <button class="close-btn" id="closeContrib" onclick="toggleContrib()">&times;</button>
+      </div>
+      <div id="contribBody" style="padding:10px 14px 14px;">
+        <div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Click refresh to load</div>
+      </div>
+      <div style="padding:0 14px 12px;text-align:center;">
+        <button
+          id="contribRefreshBtn"
+          style="background:var(--primary,#15803d);color:#fff;border:none;border-radius:6px;padding:6px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"
+          onclick="loadTopContributors()">
+          Refresh
+        </button>
+      </div>
+    </div>
+
     <!-- Visual Guide Panel -->
     <div class="guide-panel hidden" id="guidePanel">
       <div class="guide-header">
@@ -212,22 +235,6 @@
             Irregular canopy, no spacing &bull; Mixed tree species &bull; Cropland or barren fields &bull; Urban buildings/roads visible
           </div>
         </div>
-
-        <!-- ===== TOP CONTRIBUTORS ===== -->
-        <div class="guide-section" style="border-top:1px solid var(--border,#e2e8f0);padding-top:14px;margin-top:4px;">
-          <div class="guide-section-label" style="background:#f59e0b;color:#fff;margin-bottom:12px;">🏆 Top Contributors</div>
-          <div style="text-align:center;">
-            <button
-              id="topContribBtn"
-              style="background:var(--primary,#15803d);color:#fff;border:none;border-radius:6px;padding:7px 20px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:0.02em;"
-              onclick="loadTopContributors()">
-              Show Top 3
-            </button>
-            <div id="topContribList" style="display:none;margin-top:10px;text-align:left;padding:0 4px;"></div>
-          </div>
-        </div>
-        <!-- ===== /TOP CONTRIBUTORS ===== -->
-
       </div>
     </div>
 
@@ -242,7 +249,7 @@
 
   <script>
   (function() {
-    var guideBtn = document.getElementById('guideToggle');
+    var guideBtn   = document.getElementById('guideToggle');
     var guidePanel = document.getElementById('guidePanel');
     var closeGuide = document.getElementById('closeGuide');
     if (guideBtn && guidePanel) {
@@ -251,42 +258,39 @@
     }
   })();
 
+  function toggleContrib() {
+    var panel = document.getElementById('contribPanel');
+    panel.classList.toggle('hidden');
+  }
+
   function loadTopContributors() {
-    var btn  = document.getElementById('topContribBtn');
-    var list = document.getElementById('topContribList');
+    var body = document.getElementById('contribBody');
+    var btn  = document.getElementById('contribRefreshBtn');
 
-    // toggle off if already showing
-    if (list.style.display !== 'none') {
-      list.style.display = 'none';
-      btn.textContent = 'Show Top 3';
-      return;
-    }
-
-    btn.textContent = 'Loading…';
+    body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Loading…</div>';
     btn.disabled = true;
 
     fetch(GSHEET_API + '?action=topContributors')
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.ok && data.topContributors && data.topContributors.length > 0) {
-          list.innerHTML = data.topContributors.map(function(w, i) {
+          body.innerHTML = data.topContributors.map(function(w, i) {
             var medal = ['🥇','🥈','🥉'][i] || (i + 1) + '.';
-            return '<div style="padding:5px 2px;font-size:13px;color:var(--text,#1e293b);display:flex;align-items:center;gap:8px;">'
-              + '<span style="font-size:16px;">' + medal + '</span>'
-              + '<span style="font-weight:600;">' + w.name + '</span>'
+            return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border,#e2e8f0);">'
+              + '<span style="font-size:20px;line-height:1;">' + medal + '</span>'
+              + '<div>'
+              + '<div style="font-size:13px;font-weight:600;color:var(--text,#1e293b);text-transform:capitalize;">' + w.name + '</div>'
+              + '<div style="font-size:11px;color:var(--text-muted,#64748b);">' + w.completed + ' verified</div>'
+              + '</div>'
               + '</div>';
           }).join('');
         } else {
-          list.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);padding:4px 2px;">No data yet.</div>';
+          body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">No data yet.</div>';
         }
-        list.style.display = 'block';
-        btn.textContent = 'Hide';
         btn.disabled = false;
       })
       .catch(function() {
-        list.innerHTML = '<div style="font-size:12px;color:#e74c3c;padding:4px 2px;">Could not load. Check connection.</div>';
-        list.style.display = 'block';
-        btn.textContent = 'Retry';
+        body.innerHTML = '<div style="font-size:12px;color:#e74c3c;text-align:center;padding:8px 0;">Could not load. Check connection.</div>';
         btn.disabled = false;
       });
   }
