@@ -24,18 +24,16 @@ function doGet(e) {
   const action = (e.parameter.action || 'getAll');
   var output;
 
-
   if (action === 'getAll') {
     output = getAllData(ss);
   } else if (action === 'getWorker') {
     var name = (e.parameter.name || '').toString().trim();
     output = getWorker(ss, name);
   } else if (action === 'topContributors') {
-  output = getTopContributors_(ss);
+    output = getTopContributors(ss);
   } else {
     output = { error: 'Unknown action: ' + action };
   }
-
 
   return ContentService
     .createTextOutput(JSON.stringify(output))
@@ -52,7 +50,6 @@ function doPost(e) {
   const data = JSON.parse(e.postData.contents);
   const action = data.action || 'save';
 
-
   let result;
   if (action === 'saveVerification') {
     result = saveVerification(ss, data);
@@ -65,7 +62,6 @@ function doPost(e) {
   } else {
     result = { error: 'Unknown action: ' + action };
   }
-
 
   return ContentService
     .createTextOutput(JSON.stringify(result))
@@ -89,7 +85,6 @@ function getAllData(ss) {
     });
   }
 
-
   const drawnPolygons = [];
   const dSheet = ss.getSheetByName(SHEET_NAME_DRAWN);
   if (dSheet && dSheet.getLastRow() > 1) {
@@ -111,7 +106,6 @@ function getAllData(ss) {
     });
   }
 
-
   return { verifications: verifications, drawnPolygons: drawnPolygons };
 }
 
@@ -127,7 +121,6 @@ function saveVerification(ss, data) {
   const user = data.user;
   const timestamp = data.timestamp || new Date().toISOString();
 
-
   if (sheet.getLastRow() > 1) {
     const keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
     const rowIndex = keys.indexOf(key);
@@ -136,7 +129,6 @@ function saveVerification(ss, data) {
       return { success: true, action: 'updated' };
     }
   }
-
 
   sheet.appendRow([key, status, user, timestamp]);
   return { success: true, action: 'created' };
@@ -151,7 +143,6 @@ function saveDrawnPolygon(ss, data) {
   const sheet = ss.getSheetByName(SHEET_NAME_DRAWN);
   const id = data.id;
   const district = data.district;
-
 
   if (sheet.getLastRow() > 1) {
     const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
@@ -171,7 +162,6 @@ function saveDrawnPolygon(ss, data) {
       }
     }
   }
-
 
   sheet.appendRow([
     id,
@@ -194,10 +184,8 @@ function deleteDrawnPolygon(ss, data) {
   const sheet = ss.getSheetByName(SHEET_NAME_DRAWN);
   if (sheet.getLastRow() <= 1) return { success: false };
 
-
   const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
   const districts = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues().flat();
-
 
   for (var i = ids.length - 1; i >= 0; i--) {
     if (ids[i] === data.id && districts[i] === data.district) {
@@ -205,7 +193,6 @@ function deleteDrawnPolygon(ss, data) {
       return { success: true, action: 'deleted' };
     }
   }
-
 
   return { success: false };
 }
@@ -217,7 +204,6 @@ function deleteDrawnPolygon(ss, data) {
 // ============================================================
 function saveBatch(ss, data) {
   var count = 0;
-
 
   if (data.verifications) {
     Object.entries(data.verifications).forEach(function(entry) {
@@ -231,14 +217,12 @@ function saveBatch(ss, data) {
     });
   }
 
-
   if (data.drawnPolygons) {
     data.drawnPolygons.forEach(function(p) {
       saveDrawnPolygon(ss, p);
       count++;
     });
   }
-
 
   return { success: true, count: count };
 }
@@ -253,22 +237,18 @@ function buildWorkerStats(ss) {
   var vSheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
   if (!wSheet || !vSheet) return [];
 
-
   var vData = vSheet.getLastRow() > 1
     ? vSheet.getRange(2, 1, vSheet.getLastRow() - 1, 3).getValues()
     : [];
 
-
   var wAll = wSheet.getRange(1, 1, wSheet.getLastRow(), wSheet.getLastColumn()).getValues();
   var headers = wAll[0];
-
 
   function col(label) {
     return headers.findIndex(function(h) {
       return h.toString().trim().toLowerCase() === label.toLowerCase();
     });
   }
-
 
   var nameCol  = col('Full Name') !== -1 ? col('Full Name') : col('Name');
   var emailCol = col('Email') !== -1 ? col('Email') : col('Email Address');
@@ -278,19 +258,15 @@ function buildWorkerStats(ss) {
   var roleCol  = col('Role');
   var activeCol= col('Active');
 
-
   var workerMap = {};
-
 
   for (var i = 1; i < wAll.length; i++) {
     var row = wAll[i];
     var active = activeCol >= 0 ? row[activeCol] : true;
     if (active === false || active === 'FALSE' || String(active).toLowerCase() === 'false') continue;
 
-
     var role = roleCol >= 0 ? row[roleCol].toString().trim().toLowerCase() : 'worker';
     if (role === 'admin') continue;
-
 
     var name     = nameCol  >= 0 ? row[nameCol].toString().trim()  : '';
     var email    = emailCol >= 0 ? row[emailCol].toString().trim() : '';
@@ -298,9 +274,7 @@ function buildWorkerStats(ss) {
     var start    = parseInt(row[startCol], 10) || 0;
     var end      = parseInt(row[endCol],   10) || 0;
 
-
     if (!name || !start || !end || !district) continue;
-
 
     var mapKey = name.toLowerCase() + '||' + district.toLowerCase();
     if (!workerMap[mapKey]) {
@@ -309,18 +283,14 @@ function buildWorkerStats(ss) {
     workerMap[mapKey].ranges.push({ start: start, end: end });
   }
 
-
   var stats = [];
-
 
   Object.values(workerMap).forEach(function(w) {
     var nameLower = w.name.toLowerCase();
     var distLower = w.district.toLowerCase();
 
-
     var total = 0;
     w.ranges.forEach(function(r) { total += (r.end - r.start + 1); });
-
 
     var completed = 0;
     vData.forEach(function(v) {
@@ -329,28 +299,22 @@ function buildWorkerStats(ss) {
       var user   = (v[2] || '').toString().toLowerCase().trim();
       if (user !== nameLower) return;
 
-
       var parts = key.split(':');
       if (parts.length < 2) return;
       if (parts[0].toLowerCase() !== distLower) return;
 
-
       var polyId = parseInt(parts[1], 10);
       if (isNaN(polyId)) return;
-
 
       var inRange = w.ranges.some(function(r) {
         return polyId >= r.start && polyId <= r.end;
       });
       if (!inRange) return;
 
-
       if (['coconut','non-coconut','verified','yes','no'].indexOf(status) >= 0) completed++;
     });
 
-
     var rangeStr = w.ranges.map(function(r) { return r.start + '\u2013' + r.end; }).join(', ');
-
 
     stats.push({
       name: w.name, email: w.email, district: w.district,
@@ -361,7 +325,6 @@ function buildWorkerStats(ss) {
     });
   });
 
-
   return stats;
 }
 
@@ -369,31 +332,24 @@ function buildWorkerStats(ss) {
 
 // ============================================================
 // getWorker — groups ALL rows for a worker by district
-// FIX: returns districts[] array always; no broken single-district
-// shortcut that hides the second district
 // ============================================================
 function getWorker(ss, name) {
   if (!name) return { found: false, message: 'No name provided.' };
 
-
   var sheet = ss.getSheetByName(SHEET_NAME_WORKERS);
   if (!sheet) return { found: false, message: 'Workers sheet not found.' };
-
 
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { found: false, message: 'No workers registered yet.' };
 
-
   var data    = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();
   var headers = data[0];
-
 
   function colIdx(label) {
     return headers.findIndex(function(h) {
       return h.toString().trim().toLowerCase() === label.toLowerCase();
     });
   }
-
 
   var nameCol  = colIdx('Full Name') !== -1 ? colIdx('Full Name') : colIdx('Name');
   var emailCol = colIdx('Email')     !== -1 ? colIdx('Email')     : colIdx('Email Address');
@@ -405,32 +361,23 @@ function getWorker(ss, name) {
   var activeCol= colIdx('Active');
   if (capCol === -1) capCol = colIdx('Capacity');
 
-
   var matched = {
     found: false, name: '', email: '',
     capacity: '', role: 'worker',
     districts: []
   };
 
-
-  // districtMap key = district name (lowercase)
-  // Each entry: { district: string, ranges: [{start, end}] }
   var districtMap = {};
-
 
   for (var i = 1; i < data.length; i++) {
     var rowName = nameCol >= 0 ? data[i][nameCol].toString().trim().toLowerCase() : '';
     if (rowName !== name.toLowerCase()) continue;
 
-
-    // Check active flag
     var active = activeCol >= 0 ? data[i][activeCol] : true;
     if (active === false || active === 'FALSE' || String(active).toLowerCase() === 'false') {
       return { found: false, message: 'Your account is inactive. Contact admin.' };
     }
 
-
-    // Capture worker meta from first matching row only
     if (!matched.found) {
       matched.found    = true;
       matched.name     = nameCol  >= 0 ? data[i][nameCol].toString().trim()  : name;
@@ -439,14 +386,11 @@ function getWorker(ss, name) {
       matched.role     = roleCol  >= 0 ? data[i][roleCol].toString().trim()  : 'worker';
     }
 
-
     var district = distCol  >= 0 ? data[i][distCol].toString().trim()   : '';
     var start    = parseInt(data[i][startCol], 10) || 0;
     var end      = parseInt(data[i][endCol],   10) || 0;
 
-
     if (!district || !start || !end) continue;
-
 
     var dk = district.toLowerCase();
     if (!districtMap[dk]) {
@@ -455,23 +399,15 @@ function getWorker(ss, name) {
     districtMap[dk].ranges.push({ start: start, end: end });
   }
 
-
   if (!matched.found) {
     return { found: false, message: 'Name not found. Check spelling or register via the Google Form.' };
   }
 
-
   matched.districts = Object.values(districtMap);
-
 
   if (matched.districts.length === 0) {
     return { found: false, message: 'You are registered but polygon range not yet assigned. Please wait for admin.' };
   }
-
-
-  // NOTE: No single-district shortcut here — app.js reads matched.districts[] always.
-  // This ensures workers with 2+ districts get ALL their assignments.
-
 
   return matched;
 }
@@ -487,13 +423,10 @@ function sendProgressEmails() {
   var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd MMM yyyy');
   var sent = 0, failed = 0;
 
-
   stats.forEach(function(w) {
     if (!w.email) return;
 
-
     var statusMsg, statusColor, barColor;
-
 
     if (w.remaining === 0) {
       statusMsg   = 'Excellent! You have completed all your assigned polygons. Please contact admin for the next assignment.';
@@ -513,10 +446,8 @@ function sendProgressEmails() {
       barColor    = 'linear-gradient(90deg,#dc2626,#f87171)';
     }
 
-
     var subject  = 'Coconut Verification Progress - ' + w.district + ' (' + today + ')';
     var htmlBody = buildWorkerEmailHtml(w, today, statusMsg, statusColor, barColor);
-
 
     try {
       GmailApp.sendEmail(w.email, subject, 'Your email client does not support HTML.', {
@@ -529,7 +460,6 @@ function sendProgressEmails() {
       failed++;
     }
   });
-
 
   Logger.log('=== Done: ' + sent + ' sent, ' + failed + ' failed ===');
 }
@@ -544,11 +474,9 @@ function sendAdminSummary() {
   var stats = buildWorkerStats(ss);
   var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd MMM yyyy HH:mm');
 
-
   var grandTotal = 0, grandDone = 0;
   stats.forEach(function(w) { grandTotal += w.total; grandDone += w.completed; });
   var grandPercent = grandTotal > 0 ? Math.round((grandDone / grandTotal) * 100) : 0;
-
 
   var rowsHtml = '';
   stats.forEach(function(w) {
@@ -571,11 +499,9 @@ function sendAdminSummary() {
       '</td></tr>';
   });
 
-
   if (!rowsHtml) {
     rowsHtml = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">No active workers found.</td></tr>';
   }
-
 
   var subject  = 'Admin Summary - Coconut Verification (' + today + ')';
   var htmlBody =
@@ -612,7 +538,6 @@ function sendAdminSummary() {
     '<div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px 32px;text-align:center;">' +
     '<p style="margin:0;font-size:12px;color:#9ca3af;">Auto-generated • Athithiyan • Coconut Plantation Mapping Project</p>' +
     '</div></div></body></html>';
-
 
   GmailApp.sendEmail(ADMIN_EMAIL, subject, 'Your email client does not support HTML.', { htmlBody: htmlBody });
   Logger.log('Admin summary sent to: ' + ADMIN_EMAIL);
@@ -674,7 +599,6 @@ function buildRow(label, value) {
     '</div>';
 }
 
-
 function buildStatBox(label, value, color) {
   return '<div style="flex:1;padding:20px 24px;text-align:center;border-right:1px solid #e5e7eb;">' +
     '<div style="font-size:22px;font-weight:700;color:' + color + ';">' + value + '</div>' +
@@ -683,25 +607,59 @@ function buildStatBox(label, value, color) {
 }
 
 
+
 // ============================================================
-// getTopContributors_ — called via doGet?action=topContributors
-// Reads verifications sheet, counts completed per user, returns top 3
+// getTopContributors — called via doGet?action=topContributors
+// Counts ALL verified polygons per user (case-insensitive).
+// Returns top 3 with name + completed count.
+// FIX: user name now normalized to lowercase before counting
+//      so "Ravi" and "ravi" are not treated as two people.
 // ============================================================
-function getTopContributors_(ss) {
+function getTopContributors(ss) {
   const sheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
   if (!sheet || sheet.getLastRow() < 2) return { ok: true, topContributors: [] };
+
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
   const counts = {};
-  const valid = ['yes','no','coconut','non-coconut','verified'];
+
+  // Accept all common status values (case-insensitive)
+  const valid = ['yes', 'no', 'coconut', 'non-coconut', 'verified'];
+
   data.forEach(function(row) {
-    const status = (row[1]||'').toString().toLowerCase();
-    const user   = (row[2]||'').toString().trim();
+    const status = (row[1] || '').toString().toLowerCase().trim();
+    const user   = (row[2] || '').toString().toLowerCase().trim(); // ← FIX: lowercase
     if (!user || valid.indexOf(status) === -1) return;
     counts[user] = (counts[user] || 0) + 1;
   });
+
   const top = Object.keys(counts)
     .map(function(n) { return { name: n, completed: counts[n] }; })
-    .sort(function(a,b) { return b.completed - a.completed; })
+    .sort(function(a, b) { return b.completed - a.completed; })
     .slice(0, 3);
+
   return { ok: true, topContributors: top };
+}
+
+
+
+// ============================================================
+// testTopContributors — run manually from Script Editor to debug
+// Select this function in the dropdown and click ▶ Run,
+// then View → Logs to see the result.
+// ============================================================
+function testTopContributors() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Show raw sheet state
+  var sheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
+  Logger.log('Verifications sheet last row: ' + sheet.getLastRow());
+
+  if (sheet.getLastRow() > 1) {
+    var sample = sheet.getRange(2, 1, Math.min(5, sheet.getLastRow() - 1), 3).getValues();
+    Logger.log('First 5 rows (key | status | user): ' + JSON.stringify(sample));
+  }
+
+  // Run the actual function
+  var result = getTopContributors(ss);
+  Logger.log('getTopContributors result: ' + JSON.stringify(result, null, 2));
 }
