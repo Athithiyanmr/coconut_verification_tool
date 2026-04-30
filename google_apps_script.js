@@ -609,11 +609,8 @@ function buildStatBox(label, value, color) {
 
 
 // ============================================================
-// getTopContributors — called via doGet?action=topContributors
-// Counts ALL verified polygons per user (case-insensitive).
-// Returns top 3 with name + completed count.
-// FIX: user name now normalized to lowercase before counting
-//      so "Ravi" and "ravi" are not treated as two people.
+// getTopContributors — returns top 10 verifiers by count
+// Called via doGet?action=topContributors
 // ============================================================
 function getTopContributors(ss) {
   const sheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
@@ -627,7 +624,7 @@ function getTopContributors(ss) {
 
   data.forEach(function(row) {
     const status = (row[1] || '').toString().toLowerCase().trim();
-    const user   = (row[2] || '').toString().toLowerCase().trim(); // ← FIX: lowercase
+    const user   = (row[2] || '').toString().toLowerCase().trim();
     if (!user || valid.indexOf(status) === -1) return;
     counts[user] = (counts[user] || 0) + 1;
   });
@@ -635,7 +632,7 @@ function getTopContributors(ss) {
   const top = Object.keys(counts)
     .map(function(n) { return { name: n, completed: counts[n] }; })
     .sort(function(a, b) { return b.completed - a.completed; })
-    .slice(0, 3);
+    .slice(0, 10); // top 10
 
   return { ok: true, topContributors: top };
 }
@@ -644,22 +641,15 @@ function getTopContributors(ss) {
 
 // ============================================================
 // testTopContributors — run manually from Script Editor to debug
-// Select this function in the dropdown and click ▶ Run,
-// then View → Logs to see the result.
 // ============================================================
 function testTopContributors() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Show raw sheet state
   var sheet = ss.getSheetByName(SHEET_NAME_VERIFICATIONS);
   Logger.log('Verifications sheet last row: ' + sheet.getLastRow());
-
   if (sheet.getLastRow() > 1) {
     var sample = sheet.getRange(2, 1, Math.min(5, sheet.getLastRow() - 1), 3).getValues();
     Logger.log('First 5 rows (key | status | user): ' + JSON.stringify(sample));
   }
-
-  // Run the actual function
   var result = getTopContributors(ss);
   Logger.log('getTopContributors result: ' + JSON.stringify(result, null, 2));
 }
