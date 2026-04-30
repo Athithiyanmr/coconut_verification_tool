@@ -437,6 +437,58 @@ function getWorkerDistricts() {
 }
 
 // ================================================================
+//  ADMIN-ONLY: EXPORT DISTRICT GEOJSON
+// ================================================================
+
+function showAdminExportSection() {
+  const section = document.getElementById('adminExportSection');
+  if (section) section.classList.remove('hidden');
+  const btn = document.getElementById('btnExportDistGeo');
+  if (btn) {
+    btn.disabled = !currentDistrict;
+    btn.addEventListener('click', exportCurrentDistrictGeoJSON);
+  }
+}
+
+function updateAdminExportButton() {
+  if (!isAdmin(currentUser)) return;
+  const btn = document.getElementById('btnExportDistGeo');
+  if (btn) {
+    btn.disabled = !currentDistrict;
+    btn.textContent = currentDistrict
+      ? `Export ${currentDistrict} GeoJSON`
+      : 'Export District GeoJSON';
+  }
+}
+
+function exportCurrentDistrictGeoJSON() {
+  if (!geojsonData || !currentDistrict) { alert('Please select a district first.'); return; }
+
+  // Attach verification status to each feature
+  const enriched = {
+    type: 'FeatureCollection',
+    name: currentDistrict,
+    exported_at: new Date().toISOString(),
+    features: geojsonData.features.map(f => {
+      const key = `${currentDistrict}:${f.properties.id}`;
+      const status = getStatus(key) || 'pending';
+      const verifier = getVerifier(key) || '';
+      return {
+        ...f,
+        properties: {
+          ...f.properties,
+          verification_status: status,
+          verified_by: verifier,
+        }
+      };
+    })
+  };
+
+  const filename = `${currentDistrict.toLowerCase().replace(/\s+/g, '_')}_verified.geojson`;
+  downloadFile(JSON.stringify(enriched, null, 2), filename, 'application/geo+json');
+}
+
+// ================================================================
 //  INIT & USER LOGIN
 // ================================================================
 
@@ -484,6 +536,7 @@ function promptUserName() {
         modal.classList.add('hidden');
         if ($('#currentUserDisplay')) $('#currentUserDisplay').textContent = currentUser;
         showAdminBadge();
+        showAdminExportSection();
         if (districtSelect) districtSelect.disabled = false;
         if (statusEl) statusEl.classList.add('hidden');
         return;
@@ -649,6 +702,9 @@ async function loadDistrict(name) {
   enableDrawControl();
   map.off('moveend', onMapMove);
   map.on('moveend', onMapMove);
+
+  // Update admin export button label when district changes
+  updateAdminExportButton();
 }
 
 function getPolygonStyle(feature) {
