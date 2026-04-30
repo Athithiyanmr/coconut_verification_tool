@@ -464,24 +464,46 @@ function updateAdminExportButton() {
 function exportCurrentDistrictGeoJSON() {
   if (!geojsonData || !currentDistrict) { alert('Please select a district first.'); return; }
 
-  // Attach verification status to each feature
+  // Original polygons with verification status attached
+  const originalFeatures = geojsonData.features.map(f => {
+    const key = `${currentDistrict}:${f.properties.id}`;
+    return {
+      ...f,
+      properties: {
+        ...f.properties,
+        source: 'original',
+        verification_status: getStatus(key) || 'pending',
+        verified_by: getVerifier(key) || '',
+      }
+    };
+  });
+
+  // Drawn (new) polygons by all workers for this district
+  const drawnFeatures = drawnPolygons
+    .filter(p => p.district === currentDistrict)
+    .map(p => ({
+      type: 'Feature',
+      geometry: p.geometry,
+      properties: {
+        id: p.id,
+        area_ha: p.area_ha,
+        note: p.note || '',
+        drawn_by: p.user || '',
+        drawn_at: p.timestamp || '',
+        overlaps_existing: (p.overlaps_existing || []).join(', '),
+        source: 'drawn',
+        verification_status: 'pending',
+        verified_by: '',
+      }
+    }));
+
   const enriched = {
     type: 'FeatureCollection',
     name: currentDistrict,
     exported_at: new Date().toISOString(),
-    features: geojsonData.features.map(f => {
-      const key = `${currentDistrict}:${f.properties.id}`;
-      const status = getStatus(key) || 'pending';
-      const verifier = getVerifier(key) || '';
-      return {
-        ...f,
-        properties: {
-          ...f.properties,
-          verification_status: status,
-          verified_by: verifier,
-        }
-      };
-    })
+    original_count: originalFeatures.length,
+    drawn_count: drawnFeatures.length,
+    features: [...originalFeatures, ...drawnFeatures],
   };
 
   const filename = `${currentDistrict.toLowerCase().replace(/\s+/g, '_')}_verified.geojson`;
