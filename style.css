@@ -118,19 +118,15 @@ body {
 .dot-no { background: var(--no); }
 .dot-skip { background: var(--pending); }
 
-/* ---- POLYGON LIST SECTION ----
-   height: 280px gives a definite size so the internal flex child
-   (.polygon-list with flex:1) can resolve and scroll correctly.
-   The sidebar-body scrolls for everything else below it.
-*/
+/* ---- POLYGON LIST SECTION ---- */
 .polygon-list-section {
-  height: 280px;          /* definite height — critical for internal flex scroll */
+  height: 280px;
   flex-shrink: 0;
   padding: 14px 18px;
   border-bottom: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
-  overflow: hidden;       /* clip; inner .polygon-list scrolls */
+  overflow: hidden;
 }
 
 .list-toolbar {
@@ -147,7 +143,6 @@ body {
 .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
 .filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-/* Internal scroll for polygon list items */
 .polygon-list {
   flex: 1 1 0;
   min-height: 0;
@@ -425,6 +420,7 @@ body {
 .verified-by.hidden { display: none; }
 .poly-verifier { font-size: 10px; color: var(--text-faint); margin-top: 1px; }
 
+/* ---- VISUAL GUIDE FAB ---- */
 .guide-fab {
   position: absolute; top: 12px; right: 60px; z-index: 800;
   display: flex; align-items: center; gap: 6px;
@@ -436,6 +432,37 @@ body {
 }
 .guide-fab:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
 
+/* ---- TOP CONTRIBUTORS FAB ---- */
+/* Sits directly below the Visual Guide button */
+.contrib-fab {
+  position: absolute; top: 52px; right: 60px; z-index: 800;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: 1px solid #f59e0b;
+  border-radius: 8px; background: #fffbeb;
+  font: inherit; font-size: 12px; font-weight: 600;
+  color: #92400e; cursor: pointer;
+  box-shadow: var(--shadow); transition: all .15s;
+}
+.contrib-fab:hover { background: #fef3c7; border-color: #d97706; color: #78350f; }
+
+/* ---- TOP CONTRIBUTORS POPUP PANEL ---- */
+.contrib-panel {
+  position: absolute; top: 94px; right: 60px; z-index: 900;
+  width: 240px;
+  background: var(--surface); border: 1px solid var(--divider);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.13);
+  overflow: hidden;
+}
+.contrib-panel.hidden { display: none; }
+
+.contrib-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--divider);
+  background: #fffbeb;
+}
+
+/* ---- VISUAL GUIDE PANEL ---- */
 .guide-panel {
   position: absolute; top: 50px; right: 12px; z-index: 900;
   width: 520px; max-height: calc(100vh - 80px);
@@ -510,4 +537,6 @@ body {
   .guide-panel { width: calc(100vw - 24px); right: 12px; top: 12px; max-height: 70vh; }
   .guide-fab { top: auto; bottom: 80px; right: 12px; }
   .guide-card img { height: 100px; }
+  .contrib-fab { top: auto; bottom: 40px; right: 12px; }
+  .contrib-panel { bottom: 82px; top: auto; right: 12px; }
 }
