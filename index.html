@@ -168,7 +168,7 @@
       Visual Guide
     </button>
 
-    <!-- Top Contributors Button (standalone, outside guide) -->
+    <!-- Top Contributors Button -->
     <button class="contrib-fab" id="contribToggle" title="Top Contributors" onclick="toggleContrib()">
       Top Contributors
     </button>
@@ -279,10 +279,8 @@
   function loadTopContributors() {
     var body = document.getElementById('contribBody');
     var btn  = document.getElementById('contribRefreshBtn');
-
     body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Loading…</div>';
     btn.disabled = true;
-
     fetch(GSHEET_API + '?action=topContributors')
       .then(function(r) { return r.json(); })
       .then(function(data) {
