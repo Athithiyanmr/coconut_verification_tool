@@ -168,26 +168,25 @@
       Visual Guide
     </button>
 
-    <!-- Top Contributors Button — hidden by default, shown for admin only -->
-    <button class="contrib-fab" id="contribToggle" title="Top Contributors" onclick="toggleContrib()" style="display:none;">
-      Top Contributors
+    <!-- Top Contributors Button — admin only, shown via showAdminBadge() in app.js -->
+    <button class="contrib-fab" id="contribToggle" title="Top 10 Contributors" style="display:none;">
+      🏆 Top Contributors
     </button>
 
     <!-- Top Contributors Popup -->
     <div class="contrib-panel hidden" id="contribPanel">
       <div class="contrib-header">
-        <span style="font-weight:700;font-size:13px;color:var(--text,#1e293b);">Top Contributors</span>
-        <button class="close-btn" id="closeContrib" onclick="toggleContrib()">&times;</button>
+        <span style="font-weight:700;font-size:13px;color:var(--text,#1e293b);">🏆 Top 10 Contributors</span>
+        <button class="close-btn" id="closeContrib">&times;</button>
       </div>
       <div id="contribBody" style="padding:10px 14px 14px;">
-        <div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Click refresh to load</div>
+        <div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Loading…</div>
       </div>
       <div style="padding:0 14px 12px;text-align:center;">
         <button
           id="contribRefreshBtn"
-          style="background:var(--primary,#15803d);color:#fff;border:none;border-radius:6px;padding:6px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"
-          onclick="loadTopContributors()">
-          Refresh
+          style="background:var(--primary,#15803d);color:#fff;border:none;border-radius:6px;padding:6px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
+          🔄 Refresh
         </button>
       </div>
     </div>
@@ -262,6 +261,7 @@
 
   <script>
   (function() {
+    // Visual Guide toggle
     var guideBtn   = document.getElementById('guideToggle');
     var guidePanel = document.getElementById('guidePanel');
     var closeGuide = document.getElementById('closeGuide');
@@ -269,40 +269,57 @@
       guideBtn.addEventListener('click', function() { guidePanel.classList.toggle('hidden'); });
       closeGuide.addEventListener('click', function() { guidePanel.classList.add('hidden'); });
     }
-  })();
 
-  function toggleContrib() {
-    var panel = document.getElementById('contribPanel');
-    panel.classList.toggle('hidden');
-  }
+    // Top Contributors toggle — auto-loads data when opened
+    var contribBtn   = document.getElementById('contribToggle');
+    var contribPanel = document.getElementById('contribPanel');
+    var closeContrib = document.getElementById('closeContrib');
+    var refreshBtn   = document.getElementById('contribRefreshBtn');
+
+    function toggleContrib() {
+      var wasHidden = contribPanel.classList.contains('hidden');
+      contribPanel.classList.toggle('hidden');
+      if (wasHidden) loadTopContributors(); // auto-load when opening
+    }
+
+    if (contribBtn)   contribBtn.addEventListener('click', toggleContrib);
+    if (closeContrib) closeContrib.addEventListener('click', function() { contribPanel.classList.add('hidden'); });
+    if (refreshBtn)   refreshBtn.addEventListener('click', loadTopContributors);
+  })();
 
   function loadTopContributors() {
     var body = document.getElementById('contribBody');
     var btn  = document.getElementById('contribRefreshBtn');
     body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">Loading…</div>';
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
+
     fetch(GSHEET_API + '?action=topContributors')
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.ok && data.topContributors && data.topContributors.length > 0) {
+          var medals = ['🥇','🥈','🥉'];
           body.innerHTML = data.topContributors.map(function(w, i) {
-            var medal = ['🥇','🥈','🥉'][i] || (i + 1) + '.';
+            var rank = medals[i] || ('<span style="font-size:12px;font-weight:700;color:#94a3b8;min-width:20px;display:inline-block;text-align:center;">' + (i + 1) + '</span>');
+            var pct  = w.total > 0 ? Math.round((w.completed / w.total) * 100) : null;
+            var pctHtml = pct !== null
+              ? '<span style="font-size:10px;color:#94a3b8;margin-left:4px;">(' + pct + '%)</span>'
+              : '';
             return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border,#e2e8f0);">'
-              + '<span style="font-size:20px;line-height:1;">' + medal + '</span>'
-              + '<div>'
+              + '<span style="font-size:18px;line-height:1;min-width:24px;text-align:center;">' + rank + '</span>'
+              + '<div style="flex:1;">'
               + '<div style="font-size:13px;font-weight:600;color:var(--text,#1e293b);text-transform:capitalize;">' + w.name + '</div>'
-              + '<div style="font-size:11px;color:var(--text-muted,#64748b);">' + w.completed + ' verified</div>'
+              + '<div style="font-size:11px;color:var(--text-muted,#64748b);">' + w.completed + ' verified' + pctHtml + '</div>'
               + '</div>'
               + '</div>';
           }).join('');
         } else {
-          body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:8px 0;">No data yet.</div>';
+          body.innerHTML = '<div style="font-size:12px;color:var(--text-muted,#64748b);text-align:center;padding:16px 0;">No verification data yet.</div>';
         }
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
       })
       .catch(function() {
-        body.innerHTML = '<div style="font-size:12px;color:#e74c3c;text-align:center;padding:8px 0;">Could not load. Check connection.</div>';
-        btn.disabled = false;
+        body.innerHTML = '<div style="font-size:12px;color:#e74c3c;text-align:center;padding:8px 0;">⚠️ Could not load. Check connection.</div>';
+        if (btn) btn.disabled = false;
       });
   }
   </script>
